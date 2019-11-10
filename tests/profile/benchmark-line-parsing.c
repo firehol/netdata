@@ -1,4 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+
+#include "config.h"
+
 #include <stdio.h>
 #include <inttypes.h>
 #include <string.h>
@@ -6,8 +9,7 @@
 #include <ctype.h>
 #include <sys/time.h>
 
-#define likely(x) __builtin_expect(!!(x), 1)
-#define unlikely(x) __builtin_expect(!!(x), 0)
+#include "database/rrdcalc.h"
 
 #define simple_hash(name) ({                                         \
     register unsigned char *__hash_source = (unsigned char *)(name); \
@@ -18,6 +20,40 @@
     }                                                                \
     __hash_value;                                                    \
 })
+
+char *netdata_configured_host_prefix = "";
+
+void netdata_cleanup_and_exit(int ret)
+{
+    exit(ret);
+}
+
+void signals_unblock(void)
+{
+}
+
+void signals_reset(void)
+{
+}
+
+int health_variable_lookup(const char *variable, uint32_t hash, RRDCALC *rc, calculated_number *result)
+{
+    (void)variable;
+    (void)hash;
+    (void)rc;
+    (void)result;
+
+    return 0;
+}
+
+void send_statistics(const char *action, const char *action_result, const char *action_data)
+{
+    (void)action;
+    (void)action_result;
+    (void)action_data;
+
+    return;
+}
 
 static inline uint32_t simple_hash2(const char *name) {
     register unsigned char *s = (unsigned char *)name;
@@ -571,26 +607,6 @@ void test7() {
 
 // ----------------------------------------------------------------------------
 
-
-// ==============
-// --- Poor man cycle counting.
-static unsigned long tsc;
-
-static void begin_tsc(void)
-{
-  unsigned long a, d;
-  asm volatile ("cpuid\nrdtsc" : "=a" (a), "=d" (d) : "0" (0) : "ebx", "ecx");
-  tsc = ((unsigned long)d << 32) | (unsigned long)a;
-}
-
-static unsigned long end_tsc(void)
-{
-  unsigned long a, d;
-  asm volatile ("rdtscp" : "=a" (a), "=d" (d) : : "ecx");
-  return (((unsigned long)d << 32) | (unsigned long)a) - tsc;
-}
-// ===============
-
 static unsigned long long clk;
 
 static void begin_clock() {
@@ -607,7 +623,7 @@ static unsigned long long end_clock() {
     return clk = tv.tv_sec  * 1000000 + tv.tv_usec - clk;
 }
 
-void main(void)
+int main(void)
 {
     cache_hash = simple_hash("cache");
     rss_hash = simple_hash("rss");
@@ -699,4 +715,5 @@ void main(void)
          , c7
          );
 
+    exit(EXIT_SUCCESS);
 }
