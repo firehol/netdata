@@ -21,6 +21,27 @@ static struct global_statistics {
     volatile uint64_t rrdr_queries_made;
     volatile uint64_t rrdr_db_points_read;
     volatile uint64_t rrdr_result_points_generated;
+#ifdef BUFFER_MEMPOOL_STATS
+    //total counter of avoided frees since startup of daemon
+    volatile uint64_t bufmempool_free_avoided_total;
+    //frees avoided per sample
+    volatile uint64_t bufmempool_free_avoided_s;
+    
+    volatile uint64_t bufmempool_allocation_count_total;
+    volatile uint64_t bufmempool_allocation_count_s;
+
+    volatile uint64_t bufmempool_reclaimed_total;
+    volatile uint64_t bufmempool_reclaimed_s;
+
+    volatile uint64_t bufmempool_swap_total;
+    volatile uint64_t bufmempool_swap_s;
+
+    volatile uint64_t bufmempool_cantcache_toobig_total;
+    volatile uint64_t bufmempool_cantcache_toobig_s;
+
+    volatile uint64_t bufmempool_cantcache_full_total;
+    volatile uint64_t bufmempool_cantcache_full_s;
+#endif
 } global_statistics = {
         .connected_clients = 0,
         .web_requests = 0,
@@ -34,6 +55,20 @@ static struct global_statistics {
         .rrdr_queries_made = 0,
         .rrdr_db_points_read = 0,
         .rrdr_result_points_generated = 0,
+#ifdef BUFFER_MEMPOOL_STATS
+        .bufmempool_free_avoided_total = 0,
+        .bufmempool_free_avoided_s = 0,
+        .bufmempool_allocation_count_total = 0,
+        .bufmempool_allocation_count_s = 0,
+        .bufmempool_reclaimed_total = 0,
+        .bufmempool_reclaimed_s = 0,
+        .bufmempool_swap_total = 0,
+        .bufmempool_swap_s = 0,
+        .bufmempool_cantcache_toobig_total = 0,
+        .bufmempool_cantcache_toobig_s = 0,
+        .bufmempool_cantcache_full_total = 0,
+        .bufmempool_cantcache_full_s = 0,
+#endif 
 };
 
 #if defined(HAVE_C___ATOMIC) && !defined(NETDATA_NO_ATOMIC_INSTRUCTIONS)
@@ -137,6 +172,57 @@ void web_client_disconnected(void) {
 #endif
 }
 
+#ifdef BUFFER_MEMPOOL_STATS
+#if defined(HAVE_C___ATOMIC) && !defined(NETDATA_NO_ATOMIC_INSTRUCTIONS)
+void buffer_mempool_statistic_event(uint32_t events) {
+    if(events & BUFFER_MEMPOOL_CALLBACK_EVENT_FREE_AVOID) {
+        __atomic_fetch_add(&global_statistics.bufmempool_free_avoided_s, 1, __ATOMIC_SEQ_CST);
+        __atomic_fetch_add(&global_statistics.bufmempool_free_avoided_total, 1, __ATOMIC_SEQ_CST);
+    }
+    if(events & BUFFER_MEMPOOL_CALLBACK_EVENT_RECLAIM) {
+        __atomic_fetch_add(&global_statistics.bufmempool_reclaimed_s, 1, __ATOMIC_SEQ_CST);
+        __atomic_fetch_add(&global_statistics.bufmempool_reclaimed_total, 1, __ATOMIC_SEQ_CST);
+    }
+    if(events & BUFFER_MEMPOOL_CALLBACK_EVENT_ALLOC_MISS) {
+        __atomic_fetch_add(&global_statistics.bufmempool_allocation_count_s, 1, __ATOMIC_SEQ_CST);
+        __atomic_fetch_add(&global_statistics.bufmempool_allocation_count_total, 1, __ATOMIC_SEQ_CST);  
+    }
+    if(events & BUFFER_MEMPOOL_CALLBACK_EVENT_SWAP) {
+        __atomic_fetch_add(&global_statistics.bufmempool_swap_s, 1, __ATOMIC_SEQ_CST);
+        __atomic_fetch_add(&global_statistics.bufmempool_swap_total, 1, __ATOMIC_SEQ_CST);        
+    }
+    if(events & BUFFER_MEMPOOL_CALLBACK_EVENT_CANTCACHE_TOOBIG) {
+        __atomic_fetch_add(&global_statistics.bufmempool_cantcache_toobig_s, 1, __ATOMIC_SEQ_CST);
+        __atomic_fetch_add(&global_statistics.bufmempool_cantcache_toobig_total, 1, __ATOMIC_SEQ_CST);        
+    }
+    if(events & BUFFER_MEMPOOL_CALLBACK_EVENT_CANTCACHE_FULL) {
+        __atomic_fetch_add(&global_statistics.bufmempool_cantcache_full_s, 1, __ATOMIC_SEQ_CST);
+        __atomic_fetch_add(&global_statistics.bufmempool_cantcache_full_total, 1, __ATOMIC_SEQ_CST);        
+    }
+}
+#else //defined(HAVE_C___ATOMIC) && !defined(NETDATA_NO_ATOMIC_INSTRUCTIONS)
+void buffer_mempool_statistic_event(uint32_t events) {
+    global_statistics_lock();
+    if(events & BUFFER_MEMPOOL_CALLBACK_EVENT_FREE_AVOID) {
+        global_statistics.bufmempool_free_avoided_s++;
+        global_statistics.bufmempool_free_avoided_total++;
+    }
+    if(events & BUFFER_MEMPOOL_CALLBACK_EVENT_RECLAIM) {
+        global_statistics.bufmempool_reclaimed_s ++;
+        global_statistics.bufmempool_reclaimed_total++;
+    }
+    if(events & BUFFER_MEMPOOL_CALLBACK_EVENT_ALLOC_MISS) {
+        global_statistics.bufmempool_allocation_count_s++;
+        global_statistics.bufmempool_allocation_count_total++;
+    }
+    if(events & BUFFER_MEMPOOL_CALLBACK_EVENT_SWAP) {
+        global_statistics.bufmempool_swap_s++;
+        global_statistics.bufmempool_swap_total++;
+    }
+    global_statistics_unlock();
+}
+#endif //defined(HAVE_C___ATOMIC) && !defined(NETDATA_NO_ATOMIC_INSTRUCTIONS)
+#endif //BUFFER_MEMPOOL_STATS
 
 static inline void global_statistics_copy(struct global_statistics *gs, uint8_t options) {
 #if defined(HAVE_C___ATOMIC) && !defined(NETDATA_NO_ATOMIC_INSTRUCTIONS)
@@ -153,6 +239,23 @@ static inline void global_statistics_copy(struct global_statistics *gs, uint8_t 
     gs->rrdr_queries_made            = __atomic_fetch_add(&global_statistics.rrdr_queries_made, 0, __ATOMIC_SEQ_CST);
     gs->rrdr_db_points_read          = __atomic_fetch_add(&global_statistics.rrdr_db_points_read, 0, __ATOMIC_SEQ_CST);
     gs->rrdr_result_points_generated = __atomic_fetch_add(&global_statistics.rrdr_result_points_generated, 0, __ATOMIC_SEQ_CST);
+#ifdef BUFFER_MEMPOOL_STATS
+#define atomic_fetch_and_reset(member) ((gs->member) = __atomic_exchange_n((&global_statistics.member), 0, __ATOMIC_SEQ_CST))
+#define atomic_load(member) ((gs->member) = __atomic_load_n((&global_statistics.member), __ATOMIC_SEQ_CST))
+    atomic_load(bufmempool_free_avoided_total);
+    atomic_fetch_and_reset(bufmempool_free_avoided_s);
+    atomic_load(bufmempool_allocation_count_total);
+    atomic_fetch_and_reset(bufmempool_allocation_count_s);
+    atomic_load(bufmempool_reclaimed_total);
+    atomic_fetch_and_reset(bufmempool_reclaimed_s);
+    atomic_load(bufmempool_swap_total);
+    atomic_fetch_and_reset(bufmempool_swap_s);
+    atomic_load(bufmempool_cantcache_toobig_total);
+    atomic_fetch_and_reset(bufmempool_cantcache_toobig_s);
+    atomic_load(bufmempool_cantcache_full_total);
+    atomic_fetch_and_reset(bufmempool_cantcache_full_s);
+#undef atomic_fetch_and_reset
+#endif
 
     if(options & GLOBAL_STATS_RESET_WEB_USEC_MAX) {
         uint64_t n = 0;
@@ -236,6 +339,114 @@ void global_statistics_charts(void) {
         rrddim_set_by_pointer(st_cpu_thread, rd_cpu_thread_system, thread.ru_stime.tv_sec * 1000000ULL + thread.ru_stime.tv_usec);
         rrdset_done(st_cpu_thread);
     }
+
+
+#ifdef BUFFER_MEMPOOL_STATS
+    {
+        static RRDSET *st_bufmempool        = NULL;
+        static RRDDIM *rd_frees_avoided     = NULL;
+        static RRDDIM *rd_allocs_necessary  = NULL;
+        static RRDDIM *rd_reclaims          = NULL;
+        static RRDDIM *rd_swap              = NULL;
+
+        if(unlikely(!st_bufmempool)) {
+            buffer_mempool_stats_set_callback(buffer_mempool_statistic_event);
+            st_bufmempool = rrdset_create_localhost(
+                "netdata",
+                "buffer_mempool_persample",
+                NULL,
+                "buffer_mempool",
+                NULL,
+                "Memory pool efectivity statistics",
+                "count/s",
+                "netdata",
+                "stats",
+                140000,
+                localhost->rrd_update_every,
+                RRDSET_TYPE_LINE
+            );
+
+            rd_frees_avoided = rrddim_add(st_bufmempool, "avoid_free", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+            rd_allocs_necessary = rrddim_add(st_bufmempool, "allocs", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+            rd_reclaims = rrddim_add(st_bufmempool, "reclaimed", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+            rd_swap = rrddim_add(st_bufmempool, "pool_swaps", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+        } else
+            rrdset_next(st_bufmempool);
+
+        rrddim_set_by_pointer(st_bufmempool, rd_frees_avoided, gs.bufmempool_free_avoided_s);
+        rrddim_set_by_pointer(st_bufmempool, rd_allocs_necessary, gs.bufmempool_allocation_count_s);
+        rrddim_set_by_pointer(st_bufmempool, rd_reclaims, gs.bufmempool_reclaimed_s);
+        rrddim_set_by_pointer(st_bufmempool, rd_swap, gs.bufmempool_swap_s);
+        rrdset_done(st_bufmempool);
+    }
+    {
+        static RRDSET *st_bufmempool_totals       = NULL;
+        static RRDDIM *rd_frees_avoided_total     = NULL;
+        static RRDDIM *rd_allocs_necessary_total  = NULL;
+        static RRDDIM *rd_reclaims_total          = NULL;
+        static RRDDIM *rd_swap_total              = NULL;
+
+        if(unlikely(!st_bufmempool_totals)) {
+            st_bufmempool_totals = rrdset_create_localhost(
+                "netdata",
+                "buffer_mempool_total",
+                NULL,
+                "buffer_mempool",
+                NULL,
+                "Memory pool efectivity statistics",
+                "count",
+                "netdata",
+                "stats",
+                140001,
+                localhost->rrd_update_every,
+                RRDSET_TYPE_LINE
+            );
+
+            rd_frees_avoided_total = rrddim_add(st_bufmempool_totals, "avoid_free", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+            rd_allocs_necessary_total = rrddim_add(st_bufmempool_totals, "allocs", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+            rd_reclaims_total = rrddim_add(st_bufmempool_totals, "reclaimed", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+            rd_swap_total = rrddim_add(st_bufmempool_totals, "pool_swaps", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+        } else
+            rrdset_next(st_bufmempool_totals);
+
+        rrddim_set_by_pointer(st_bufmempool_totals, rd_frees_avoided_total, gs.bufmempool_free_avoided_total);
+        rrddim_set_by_pointer(st_bufmempool_totals, rd_allocs_necessary_total, gs.bufmempool_allocation_count_total);
+        rrddim_set_by_pointer(st_bufmempool_totals, rd_reclaims_total, gs.bufmempool_reclaimed_total);
+        rrddim_set_by_pointer(st_bufmempool_totals, rd_swap_total, gs.bufmempool_swap_total);
+        rrdset_done(st_bufmempool_totals);
+    }
+    {
+        static RRDSET *st_bufmempool_uncacheable  = NULL;
+        static RRDDIM *rd_cantcache_toobig        = NULL;
+        static RRDDIM *rd_cantcache_full          = NULL;
+
+        if(unlikely(!st_bufmempool_uncacheable)) {
+            st_bufmempool_uncacheable = rrdset_create_localhost(
+                "netdata",
+                "buffer_mempool_cantcache",
+                NULL,
+                "buffer_mempool",
+                NULL,
+                "Memory pool efectivity statistics",
+                "count",
+                "netdata",
+                "stats",
+                140002,
+                localhost->rrd_update_every,
+                RRDSET_TYPE_LINE
+            );
+
+            rd_cantcache_toobig = rrddim_add(st_bufmempool_uncacheable, "too_big", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+            rd_cantcache_full   = rrddim_add(st_bufmempool_uncacheable, "mempool_full", NULL, 1, 1, RRD_ALGORITHM_ABSOLUTE);
+        } else
+            rrdset_next(st_bufmempool_uncacheable);
+
+        rrddim_set_by_pointer(st_bufmempool_uncacheable, rd_cantcache_toobig, gs.bufmempool_cantcache_toobig_s);
+        rrddim_set_by_pointer(st_bufmempool_uncacheable, rd_cantcache_full, gs.bufmempool_cantcache_full_s);
+        rrdset_done(st_bufmempool_uncacheable);
+    }
+#endif
+
 
     // ----------------------------------------------------------------
 
