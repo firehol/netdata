@@ -1136,6 +1136,7 @@ static int rrdpush_receive(int fd
     char *rrdpush_destination = default_rrdpush_destination;
     char *rrdpush_api_key = default_rrdpush_api_key;
     char *rrdpush_send_charts_matching = default_rrdpush_send_charts_matching;
+    const char *backend_labels = NULL;
     time_t alarms_delay = 60;
     RRDPUSH_MULTIPLE_CONNECTIONS_STRATEGY rrdpush_multiple_connections_strategy = RRDPUSH_MULTIPLE_CONNECTIONS_ALLOW;
 
@@ -1187,6 +1188,7 @@ static int rrdpush_receive(int fd
                 , os
                 , timezone
                 , tags
+                , backend_labels
                 , program_name
                 , program_version
                 , update_every
