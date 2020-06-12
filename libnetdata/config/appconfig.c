@@ -683,7 +683,7 @@ void appconfig_generate(struct config *root, BUFFER *wb, int only_changed)
     struct section *co;
     struct config_option *cv;
 
-    for(i = 0; i < 3 ;i++) {
+    for(i = 0; i < 2 ;i++) {
         switch(i) {
             case 0:
                 buffer_strcat(wb,
