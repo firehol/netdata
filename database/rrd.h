@@ -531,6 +531,14 @@ struct rrdset {
     avl_tree_lock dimensions_index;                 // the root of the dimensions index
     RRDDIM *dimensions;                             // the actual data for every dimension
 
+    // -------------------------------------------------------------------------
+    // it should be safe to extend this structure with volatile fields that are wiped on load
+    size_t gap_sent;                                // how much of a gap has been filled on this chart (sender)
+    size_t gap_start;                               // start of the current gap being filled (receiver)
+    netdata_mutex_t shared_flags_lock;
+    unsigned int sflag_replicating_up:1;            // if this chart is being replicated to an upstream parent
+    unsigned int sflag_replicating_down:1;          // if this chart is being replicated from a downstream child
+
 };
 
 #define rrdset_rdlock(st) netdata_rwlock_rdlock(&((st)->rrdset_rwlock))
@@ -998,6 +1006,7 @@ static inline RRDSET *rrdset_find_active_byname_localhost(const char *name)
 
 extern void rrdset_next_usec_unfiltered(RRDSET *st, usec_t microseconds);
 extern void rrdset_next_usec(RRDSET *st, usec_t microseconds);
+extern void rrdset_next_usec_slew(RRDSET *st, usec_t microseconds);
 #define rrdset_next(st) rrdset_next_usec(st, 0ULL)
 
 extern void rrdset_done(RRDSET *st);
@@ -1013,6 +1022,11 @@ extern void rrdset_isnot_obsolete(RRDSET *st);
 // get the total duration in seconds of the round robin database
 #define rrdset_duration(st) ((time_t)( (((st)->counter >= ((unsigned long)(st)->entries))?(unsigned long)(st)->entries:(st)->counter) * (st)->update_every ))
 
+static inline time_t rrddim_last_entry_t(RRDDIM *rd) {
+    if (rd->rrdset->rrd_memory_mode == RRD_MEMORY_MODE_DBENGINE)
+        return rd->state->query_ops.latest_time(rd);
+    return (time_t)rd->rrdset->last_updated.tv_sec;
+}
 // get the timestamp of the last entry in the round robin database
 static inline time_t rrdset_last_entry_t(RRDSET *st) {
     if (st->rrd_memory_mode == RRD_MEMORY_MODE_DBENGINE) {
@@ -1029,6 +1043,12 @@ static inline time_t rrdset_last_entry_t(RRDSET *st) {
     } else {
         return (time_t)st->last_updated.tv_sec;
     }
+}
+
+static inline time_t rrddim_first_entry_t(RRDDIM *rd) {
+    if (rd->rrdset->rrd_memory_mode == RRD_MEMORY_MODE_DBENGINE)
+        return rd->state->query_ops.oldest_time(rd);
+    return (time_t)(rd->rrdset->last_updated.tv_sec - rrdset_duration(rd->rrdset));
 }
 
 // get the timestamp of first entry in the round robin database
@@ -1051,6 +1071,7 @@ static inline time_t rrdset_first_entry_t(RRDSET *st) {
 }
 
 time_t rrdhost_last_entry_t(RRDHOST *h);
+void debug_dump_rrdset_state(RRDSET *st);
 
 // get the last slot updated in the round robin database
 #define rrdset_last_slot(st) ((size_t)(((st)->current_entry == 0) ? (st)->entries - 1 : (st)->current_entry - 1))

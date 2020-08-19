@@ -88,6 +88,7 @@ static void rrdpush_sender_thread_reset_all_charts(RRDHOST *host) {
         rrdset_flag_clear(st, RRDSET_FLAG_UPSTREAM_EXPOSED);
 
         st->upstream_resync_time = 0;
+        st->gap_sent = 0;
 
         rrdset_rdlock(st);
 
@@ -175,10 +176,10 @@ static int rrdpush_sender_thread_connect_to_parent(RRDHOST *host, int default_po
         return 0;
     }
 
-    info("STREAM %s [send to %s]: initializing communication...", host->hostname, s->connected_to);
 
 #ifdef ENABLE_HTTPS
     if( netdata_client_ctx ){
+        info("STREAM %s [send to %s]: initializing communication (SSL)...", host->hostname, s->connected_to);
         host->ssl.flags = NETDATA_SSL_START;
         if (!host->ssl.conn){
             host->ssl.conn = SSL_new(netdata_client_ctx);
@@ -202,6 +203,7 @@ static int rrdpush_sender_thread_connect_to_parent(RRDHOST *host, int default_po
         }
     }
     else {
+        info("STREAM %s [send to %s]: initializing communication (plain)...", host->hostname, s->connected_to);
         host->ssl.flags = NETDATA_SSL_NO_HANDSHAKE;
     }
 #endif
@@ -331,9 +333,14 @@ static int rrdpush_sender_thread_connect_to_parent(RRDHOST *host, int default_po
         rrdpush_sender_thread_close_socket(host);
         return 0;
     }
+    if (received == 0) {
+        error("STREAM %s [send to %s]: remote netdata does not respond (timeout).", host->hostname, s->connected_to);
+        rrdpush_sender_thread_close_socket(host);
+        return 0;
+    }
 
     http[received] = '\0';
-    debug(D_STREAM, "Response to sender from far end: %s", http);
+    debug(D_STREAM, "Response to sender from far end (%ld-bytes): %s", received, http);
     int answer = -1;
     char *version_start = strchr(http, '=');
     int32_t version = -1;
@@ -383,6 +390,96 @@ static int rrdpush_sender_thread_connect_to_parent(RRDHOST *host, int default_po
     return 1;
 }
 
+extern time_t default_rrdpush_gap_block_size;
+void sender_fill_gap_nolock(struct sender_state *s, RRDSET *st)
+{
+    UNUSED(s);
+    RRDDIM *rd;
+    struct rrddim_query_handle handle;
+    time_t first_t = rrdset_first_entry_t(st);
+    time_t st_start = MAX((time_t)st->gap_sent,first_t);
+    time_t end = st->last_updated.tv_sec;
+    // TODO: Why are we not taking the end from the request
+    time_t gap_length = end-st_start+1;
+    size_t num_points = 0;
+    // TODO: If we shrink the gap then move the start later not the end earlier!
+    if (gap_length > default_rrdpush_gap_block_size)
+        end = st_start + default_rrdpush_gap_block_size - 1;
+    buffer_sprintf(s->build, "REPBEGIN %s %ld %ld\n", st->id, st_start, end);
+    rrddim_foreach_read(rd, st) {
+        if (rd->exposed) {
+            time_t rd_start = rrddim_first_entry_t(rd);
+            time_t rd_end   = rrddim_last_entry_t(rd);
+            // If the database is empty then there is nothing in the replication window to send. This can occur
+            // because the chart does not have RRDSET_FLAG_STORE_FIRST set and so it streamed initial values that
+            // it did not store.
+            if (rd_end > 0) {
+                time_t sample_t = MAX(st_start, rd_start);
+                time_t metric_t;
+                size_t index = sample_t - st_start;
+                rd->state->query_ops.init(rd, &handle, sample_t, end);
+                debug(D_REPLICATION, "Fill replication with %s.%s @%ld-%ld rd@%ld-%ld", st->id, rd->id, sample_t, end,
+                                     rd_start, rd_end);
+                while (sample_t <= end && !rd->state->query_ops.is_finished(&handle)) {
+                    storage_number n = rd->state->query_ops.next_metric(&handle, &metric_t);
+                    if (sample_t != metric_t)
+                        debug(D_REPLICATION, "%s.%s Sample mismatch during replication %ld vs %ld", st->id, rd->id,
+                                             sample_t, metric_t);
+                    if (handle.rrdeng.descr)
+                        debug(D_REPLICATION, "%s.%s page_descr %llu - %llu with %u", st->id, rd->id,
+                                             rd->state->handle.rrdeng.descr->start_time,
+                                             rd->state->handle.rrdeng.descr->end_time,
+                                             rd->state->handle.rrdeng.descr->page_length);
+                    buffer_sprintf(s->build, "REPDIM \"%s\" %zu %ld " STORAGE_NUMBER_FORMAT "\n", rd->id, index,
+                                   sample_t, n);
+                    debug(D_REPLICATION, "%s.%s REPDIM %zu %ld " STORAGE_NUMBER_FORMAT "\n", st->id, rd->id, index,
+                                   sample_t, n);
+                    // Technically rd->update_every could differ from st->update_every, but it does not.
+                    sample_t += rd->update_every;
+                    index++;
+                    num_points++;
+                }
+                if (sample_t >= st->last_updated.tv_sec) {
+                    debug(D_REPLICATION, "%s.%s finished replication @%ld with %zu samples (index=%zu)", st->id,
+                                         rd->id, sample_t, num_points, index);
+                    buffer_sprintf(s->build, "REPMETA \"%s\" " COLLECTED_NUMBER_FORMAT " " COLLECTED_NUMBER_FORMAT " "
+                                   COLLECTED_NUMBER_FORMAT " " CALCULATED_NUMBER_FORMAT  " " CALCULATED_NUMBER_FORMAT
+                                   " " CALCULATED_NUMBER_FORMAT "\n",
+                                   rd->id,
+                                   rd->last_collected_value,
+                                   rd->collected_value,
+                                   rd->collected_value_max,
+                                   rd->last_stored_value,
+                                   rd->calculated_value,
+                                   rd->last_calculated_value);
+                }
+                else {
+                    debug(D_REPLICATION, "%s.%s replicated up to @%ld with %zu samples, another block coming", st->id,
+                                         rd->id, sample_t, index);
+                }
+                rd->state->query_ops.finalize(&handle);
+            }
+            else
+                debug(D_REPLICATION, "%s.%s has no data in the database yet (@%ld-%ld), empty replication window",
+                                     st->id, rd->id, (long)st->gap_sent, st->last_updated.tv_sec);
+
+        }
+    }
+    usec_t last_collected_ut = st->last_collected_time.tv_sec * USEC_PER_SEC + st->last_collected_time.tv_usec;
+    // The replication always happens at a known step during the point update as we trigger it from rrdset_done().
+    // This avoids race hazards where the chart could be in an inconsistent state during the update, but it means that
+    // we replicate during the window where that last_collected_time has been updated and the difference is held in
+    // the local variables now_collect_ut and last_collect_ut. Account for this so that the interpolation on the
+    // receiver has access to the same same data.
+    buffer_sprintf(s->build, "REPEND %zu %lld %lld %llu\n", num_points, st->collected_total, st->last_collected_total,
+                   last_collected_ut - st->usec_since_last_update);
+    st->gap_sent = end;
+    debug_dump_rrdset_state(st);
+    if ((time_t)st->gap_sent == st->last_updated.tv_sec)
+        st->sflag_replicating_up = 0;
+}
+
+
 static void attempt_to_connect(struct sender_state *state)
 {
     state->send_attempts = 0;
@@ -390,20 +487,17 @@ static void attempt_to_connect(struct sender_state *state)
     if(rrdpush_sender_thread_connect_to_parent(state->host, state->default_port, state->timeout, state)) {
         state->last_sent_t = now_monotonic_sec();
 
-        // reset the buffer, to properly send charts and metrics
+        // reset the buffer (and the chart states), to properly send charts and metrics
         rrdpush_sender_thread_data_flush(state->host);
 
         // send from the beginning
-        state->begin = 0;
-
-        // make sure the next reconnection will be immediate
-        state->not_connected_loops = 0;
-
-        // reset the bytes we have sent for this session
-        state->sent_bytes_on_this_connection = 0;
-
-        // let the data collection threads know we are ready
-        state->host->rrdpush_sender_connected = 1;
+        netdata_mutex_lock(&state->mutex);
+        /*state->gap_start = 0;
+        state->gap_end = 0;*/
+        state->host->rrdpush_sender_connected = 1; // let the data collection threads know we are ready
+        state->not_connected_loops = 0; // make sure the next reconnection will be immediate
+        state->sent_bytes_on_this_connection = 0; // reset the bytes we have sent for this session
+        netdata_mutex_unlock(&state->mutex);
     }
     else {
         // increase the failed connections counter
@@ -505,19 +599,61 @@ int ret;
     rrdpush_sender_thread_close_socket(s->host);
 }
 
-// This is just a placeholder until the gap filling state machine is inserted
+void execute_replicate(struct sender_state *s, char *st_id, long start_t, long end_t) {
+    time_t now = now_realtime_sec();
+    debug(D_REPLICATION, "Replication request started: %s %ld - %ld @ %ld", st_id, (long)start_t, (long)end_t, (long)now);
+    RRDSET *st = rrdset_find(s->host, st_id);
+    if (!st) {
+        errno = 0;
+        error("Cannot replicate chart %s @ %ld - not found!", st_id, now);
+    }
+    else {
+        // Use the chart shared flags (thread-safe) to tell the collector that replication is requested
+        // The sender buffer lock is not held at this point.
+        netdata_mutex_lock(&st->shared_flags_lock);
+        st->sflag_replicating_up = 1;
+        st->gap_sent = (size_t)start_t;
+        netdata_mutex_unlock(&st->shared_flags_lock);
+    }
+}
+
 void execute_commands(struct sender_state *s) {
     char *start = s->read_buffer, *end = &s->read_buffer[s->read_len], *newline;
     *end = 0;
+    //debug(D_STREAM, "%s [send to %s] received command over connection (%d-bytes): %s", s->host->hostname,
+    //      s->connected_to, s->read_len, start);
     while( start<end && (newline=strchr(start, '\n')) ) {
         *newline = 0;
-        info("STREAM %s [send to %s] received command over connection: %s", s->host->hostname, s->connected_to, start);
+        if (!strncmp(start, "REPLICATE ", 10)) {
+            char *next = strchr(start+10, ' ');
+            if (next) {
+                *next = 0;
+                long start_t = strtol(next+1, &next, 10);
+                if (*next == ' ') {
+                    char *after;
+                    long end_t = strtol(next+1, &after, 10);
+                    if (after == newline) {
+                        execute_replicate(s, start+10, start_t, end_t);
+                        start = after+1;
+                        continue;
+                    }
+                }
+            }
+            errno = 0;
+            error("Malformed command on streaming link: %s", start);
+            start = newline+1;
+            continue;
+        }
         start = newline+1;
+        errno = 0;
+        error("Unrecognised command received, skipping to position %ld", start - s->read_buffer);
     }
     if (start<end) {
         memcpy( s->read_buffer, start, end-start);
         s->read_len = end-start;
     }
+    else
+        s->read_len = 0;
 }
 
 
@@ -616,12 +752,6 @@ void *rrdpush_sender_thread(void *ptr) {
             s->buffer->read = 0;
             s->buffer->write = 0;
             attempt_to_connect(s);
-            if (s->version >= VERSION_GAP_FILLING) {
-                time_t now = now_realtime_sec();
-                sender_start(s);
-                buffer_sprintf(s->build, "TIMESTAMP %ld", now);
-                sender_commit(s);
-            }
             continue;
         }
 
@@ -637,6 +767,8 @@ void *rrdpush_sender_thread(void *ptr) {
         fds[Socket].revents = 0;
         fds[Socket].fd = s->host->rrdpush_sender_socket;
 
+        // Hold the buffer lock while we check if it is non-empty. The other thread adds data but only this
+        // thread removes it so the non-empty condition is valid after we release the lock.
         netdata_mutex_lock(&s->mutex);
         char *chunk;
         size_t outstanding = cbuffer_next_unsafe(s->host->sender->buffer, &chunk);
@@ -678,11 +810,14 @@ void *rrdpush_sender_thread(void *ptr) {
         }
 
         // Read as much as possible to fill the buffer, split into full lines for execution.
+        // Not holding the sender buffer lock while the commands are read or executed.
         if (fds[Socket].revents & POLLIN)
             attempt_read(s);
-        execute_commands(s);
+        if (s->read_len>0)
+            execute_commands(s);
 
-        // If we have data and have seen the TCP window open then try to close it by a transmission.
+        // If we have data and have seen the TCP window open then try to close it by a transmission. We hold the
+        // sender buffer lock during the transmission.
         if (outstanding && fds[Socket].revents & POLLOUT)
             attempt_to_send(s);
 

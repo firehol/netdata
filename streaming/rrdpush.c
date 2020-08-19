@@ -40,6 +40,9 @@ struct config stream_config = {
 };
 
 unsigned int default_rrdpush_enabled = 0;
+time_t default_rrdpush_gap_block_size;
+uint32_t default_rrdpush_max_gap;
+uint32_t default_rrdpush_gap_history;
 char *default_rrdpush_destination = NULL;
 char *default_rrdpush_api_key = NULL;
 char *default_rrdpush_send_charts_matching = NULL;
@@ -72,6 +75,9 @@ int rrdpush_init() {
     default_rrdpush_destination = appconfig_get(&stream_config, CONFIG_SECTION_STREAM, "destination", "");
     default_rrdpush_api_key     = appconfig_get(&stream_config, CONFIG_SECTION_STREAM, "api key", "");
     default_rrdpush_send_charts_matching      = appconfig_get(&stream_config, CONFIG_SECTION_STREAM, "send charts matching", "*");
+    default_rrdpush_gap_block_size = appconfig_get_number(&stream_config, CONFIG_SECTION_STREAM, "gap replication block size", 60);
+    default_rrdpush_max_gap = appconfig_get_number(&stream_config, CONFIG_SECTION_STREAM, "history gap replication", 60);
+    default_rrdpush_gap_history = appconfig_get_number(&stream_config, CONFIG_SECTION_STREAM, "max gap replication", 60);
     rrdhost_free_orphan_time    = config_get_number(CONFIG_SECTION_GLOBAL, "cleanup orphan hosts after seconds", rrdhost_free_orphan_time);
 
 
@@ -263,11 +269,15 @@ static inline void rrdpush_send_chart_definition_nolock(RRDSET *st) {
 // sends the current chart dimensions
 static inline void rrdpush_send_chart_metrics_nolock(RRDSET *st, struct sender_state *s) {
     RRDHOST *host = st->rrdhost;
-    buffer_sprintf(host->sender->build, "BEGIN \"%s\" %llu", st->id, (st->last_collected_time.tv_sec > st->upstream_resync_time)?st->usec_since_last_update:0);
-    if (s->version >= VERSION_GAP_FILLING)
-        buffer_sprintf(host->sender->build, " %ld\n", st->last_collected_time.tv_sec);
+    // Format looks the same - meaning of the microsecond field has changed
+    if (s->version >= VERSION_GAP_FILLING) {
+        usec_t collected_time = st->last_collected_time.tv_sec * USEC_PER_SEC + st->last_collected_time.tv_usec;
+        usec_t stored_time = st->last_updated.tv_sec * USEC_PER_SEC + st->last_updated.tv_usec;
+        debug(D_REPLICATION, "Sending %s update collected=%llu stored=%llu delta=%llu", st->id, collected_time, stored_time, collected_time - stored_time);
+        buffer_sprintf(host->sender->build, "BEGIN \"%s\" %llu %ld\n", st->id, collected_time - stored_time, (long)st->last_updated.tv_sec);
+    }
     else
-        buffer_strcat(host->sender->build, "\n");
+        buffer_sprintf(host->sender->build, "BEGIN \"%s\" %llu\n", st->id, (st->last_collected_time.tv_sec > st->upstream_resync_time)?st->usec_since_last_update:0);
 
     RRDDIM *rd;
     rrddim_foreach_read(rd, st) {
@@ -297,6 +307,7 @@ void rrdset_push_chart_definition_now(RRDSET *st) {
     rrdset_unlock(st);
 }
 
+void sender_fill_gap_nolock(struct sender_state *s, RRDSET *st);
 void rrdset_done_push(RRDSET *st) {
     if(unlikely(!should_send_chart_matching(st)))
         return;
@@ -318,18 +329,35 @@ void rrdset_done_push(RRDSET *st) {
         host->rrdpush_sender_error_shown = 0;
     }
 
+    // ---- Locking order: sender buffer lock, state flags lock -----------
     sender_start(host->sender);
-
+    netdata_mutex_lock(&st->shared_flags_lock);
     if(need_to_send_chart_definition(st))
         rrdpush_send_chart_definition_nolock(st);
-
+    if (st->sflag_replicating_up) {
+        debug(D_STREAM, "Not sending collector new data - chart %s in replication mode from %ld", st->name, (long)st->gap_sent);
+        if (st->gap_sent == 0) {
+            errno = 0;
+            error("Invalid replication request - cannot replicate from time 0 on %s", st->name);
+            st->sflag_replicating_up = 0;
+        }
+        else
+            sender_fill_gap_nolock(host->sender, st);
+    }
+    netdata_mutex_unlock(&st->shared_flags_lock);
     rrdpush_send_chart_metrics_nolock(st, host->sender);
-
     // signal the sender there are more data
     if(host->rrdpush_sender_pipe[PIPE_WRITE] != -1 && write(host->rrdpush_sender_pipe[PIPE_WRITE], " ", 1) == -1)
         error("STREAM %s [send]: cannot write to internal pipe", host->hostname);
-
     sender_commit(host->sender);
+    // ----- Release order: state flags lock, sender buffer lock -----------
+
+    /*if (host->sender->gap_start != 0 && st->gap_sent < host->sender->gap_end) {
+        if (st->gap_sent == 0)
+            st->gap_sent = host->sender->gap_start;
+    }
+    if (host->sender->gap_start == 0 || st->gap_sent >= host->sender->gap_end)
+    */
 }
 
 // labels
@@ -409,11 +437,9 @@ void log_stream_connection(const char *client_ip, const char *client_port, const
 
 static void rrdpush_sender_thread_spawn(RRDHOST *host) {
     netdata_mutex_lock(&host->sender->mutex);
-
     if(!host->rrdpush_sender_spawn) {
         char tag[NETDATA_THREAD_TAG_MAX + 1];
         snprintfz(tag, NETDATA_THREAD_TAG_MAX, "STREAM_SENDER[%s]", host->hostname);
-
         if(netdata_thread_create(&host->rrdpush_sender_thread, tag, NETDATA_THREAD_OPTION_JOINABLE, rrdpush_sender_thread, (void *) host->sender))
             error("STREAM %s [send]: failed to create new thread for client.", host->hostname);
         else
@@ -662,6 +688,8 @@ int rrdpush_receiver_thread_spawn(struct web_client *w, char *url) {
     w->ssl.conn = NULL;
     w->ssl.flags = NETDATA_SSL_START;
 #endif
+    rpt->max_gap           = default_rrdpush_max_gap;
+    rpt->gap_history       = default_rrdpush_gap_history;
 
     if(w->user_agent && w->user_agent[0]) {
         char *t = strchr(w->user_agent, '/');

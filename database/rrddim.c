@@ -119,7 +119,9 @@ inline int rrddim_set_divisor(RRDSET *st, RRDDIM *rd, collected_number divisor) 
 // RRDDIM legacy data collection functions
 
 static void rrddim_collect_init(RRDDIM *rd) {
-    rd->values[rd->rrdset->current_entry] = SN_EMPTY_SLOT; // pack_storage_number(0, SN_NOT_EXISTS);
+    // Don't put a gap into streamed charts
+    if (rd->rrdset->rrdhost == localhost || rd->rrdset->last_collected_time.tv_sec == 0)
+        rd->values[rd->rrdset->current_entry] = SN_EMPTY_SLOT; // pack_storage_number(0, SN_NOT_EXISTS);
 }
 static void rrddim_collect_store_metric(RRDDIM *rd, usec_t point_in_time, storage_number number) {
     (void)point_in_time;
@@ -182,6 +184,29 @@ static time_t rrddim_query_oldest_time(RRDDIM *rd) {
 // ----------------------------------------------------------------------------
 // RRDDIM create a dimension
 
+void recover_collected_time(RRDSET *st, RRDDIM *rd) {
+    debug(D_RRD_CALLS, "Checking dimension %s timestamps against chart %s", rd->name, st->id);
+    // If we are restarting then preserve the metdata-time stamps for charts on remote hosts to allow replication to
+    // kick in and fill the gap. On local host we need to keep the zero times to fill the gap with null values to
+    // align the charts properly.
+#ifdef ENABLE_DBENGINE
+    if (st->rrdhost != localhost &&
+        (rd->last_collected_time.tv_sec > st->last_collected_time.tv_sec
+         || (rd->last_collected_time.tv_sec == st->last_collected_time.tv_sec &&
+             rd->last_collected_time.tv_usec > st->last_collected_time.tv_usec)))
+    {
+        st->last_collected_time = rd->last_collected_time;   // TODO: Check this should be a MAX() not a copy??
+        info("Updating collected time on %s", st->id);
+    }
+    time_t stored_t = rd->state->query_ops.latest_time(rd);
+    if (stored_t > st->last_updated.tv_sec) {
+        st->last_updated.tv_sec = stored_t;
+        st->last_updated.tv_usec = 0;
+        info("Updating updated time on %s", st->id);
+    }
+#endif
+}
+
 void rrdcalc_link_to_rrddim(RRDDIM *rd, RRDSET *st, RRDHOST *host) {
     RRDCALC *rrdc;
     for (rrdc = host->alarms_with_foreach; rrdc ; rrdc = rrdc->next) {
@@ -226,7 +251,8 @@ RRDDIM *rrddim_add_custom(RRDSET *st, const char *id, const char *name, collecte
 
     RRDDIM *rd = rrddim_find(st, id);
     if(unlikely(rd)) {
-        debug(D_RRD_CALLS, "Cannot create rrd dimension '%s/%s', it already exists.", st->id, name?name:"<NONAME>");
+        debug(D_RRD_CALLS, "Cannot create rrd dimension '%s/%s', it already exists last_collected=%ld last_updated=%ld.",
+              st->id, name?name:"<NONAME>", (long)rd->last_collected_time.tv_sec, (long)rd->state->query_ops.latest_time(rd));
 
         int rc = rrddim_set_name(st, rd, name);
         rc += rrddim_set_algorithm(st, rd, algorithm);
@@ -235,6 +261,7 @@ RRDDIM *rrddim_add_custom(RRDSET *st, const char *id, const char *name, collecte
         if (!is_archived && rrddim_flag_check(rd, RRDDIM_FLAG_ARCHIVED)) {
             rd->state->collect_ops.init(rd);
             rrddim_flag_clear(rd, RRDDIM_FLAG_ARCHIVED);
+            recover_collected_time(st, rd);
             rrddimvar_create(rd, RRDVAR_TYPE_CALCULATED, NULL, NULL, &rd->last_stored_value, RRDVAR_OPTION_DEFAULT);
             rrddimvar_create(rd, RRDVAR_TYPE_COLLECTED, NULL, "_raw", &rd->last_collected_value, RRDVAR_OPTION_DEFAULT);
             rrddimvar_create(rd, RRDVAR_TYPE_TIME_T, NULL, "_last_collected_t", &rd->last_collected_time.tv_sec, RRDVAR_OPTION_DEFAULT);
@@ -455,6 +482,7 @@ RRDDIM *rrddim_add_custom(RRDSET *st, const char *id, const char *name, collecte
     if (!is_archived)
         calc_link_to_rrddim(rd);
 
+    recover_collected_time(st, rd);
     rrdset_unlock(st);
 #ifdef ENABLE_ACLK
     if (netdata_cloud_setting)

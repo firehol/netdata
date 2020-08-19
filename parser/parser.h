@@ -17,7 +17,7 @@ typedef enum parser_rc {
 
 typedef struct pluginsd_action {
     PARSER_RC (*set_action)(void *user, RRDSET *st, RRDDIM *rd, long long int value);
-    PARSER_RC (*begin_action)(void *user, RRDSET *st, usec_t microseconds, int trust_durations);
+    PARSER_RC (*begin_action)(void *user, RRDSET *st, usec_t microseconds, usec_t remote_clock);
     PARSER_RC (*end_action)(void *user, RRDSET *st);
     PARSER_RC (*chart_action)
     (void *user, char *type, char *id, char *name, char *family, char *context, char *title, char *units, char *plugin,
@@ -95,7 +95,13 @@ int parser_push(PARSER *working_parser, char *line);
 void parser_destroy(PARSER *working_parser);
 int parser_recover_input(PARSER *working_parser);
 
-extern size_t pluginsd_process(RRDHOST *host, struct plugind *cd, FILE *fp, int trust_durations);
+typedef enum {
+    PLUGINSD_USEC_IGNORE,
+    PLUGINSD_USEC_TRUST,
+    PLUGINSD_USEC_SLEW,
+} pluginsd_usecs;
+
+extern size_t pluginsd_process(RRDHOST *host, struct plugind *cd, FILE *fp, pluginsd_usecs usec_semantics);
 
 extern PARSER_RC pluginsd_set(char **words, void *user, PLUGINSD_ACTION  *plugins_action);
 extern PARSER_RC pluginsd_begin(char **words, void *user, PLUGINSD_ACTION  *plugins_action);

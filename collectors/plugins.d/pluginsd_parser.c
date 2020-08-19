@@ -20,15 +20,23 @@ PARSER_RC pluginsd_flush_action(void *user, RRDSET *st)
     return PARSER_RC_OK;
 }
 
-PARSER_RC pluginsd_begin_action(void *user, RRDSET *st, usec_t microseconds, int trust_durations)
+PARSER_RC pluginsd_begin_action(void *user_v, RRDSET *st, usec_t microseconds, usec_t remote_clock)
 {
-    UNUSED(user);
+    UNUSED(remote_clock);
+    PARSER_USER_OBJECT *user = user_v;
     if (likely(st->counter_done)) {
         if (likely(microseconds)) {
-            if (trust_durations)
-                rrdset_next_usec_unfiltered(st, microseconds);
-            else
+            switch(user->usec_semantics) {
+                case PLUGINSD_USEC_IGNORE:
                 rrdset_next_usec(st, microseconds);
+                break;
+                case PLUGINSD_USEC_TRUST:
+                rrdset_next_usec_unfiltered(st, microseconds);
+                break;
+                case PLUGINSD_USEC_SLEW:
+                rrdset_next_usec_slew(st, microseconds);
+                break;
+            }
         } else
             rrdset_next(st);
     }
@@ -214,10 +222,12 @@ disable:
     return PARSER_RC_ERROR;
 }
 
-PARSER_RC pluginsd_begin(char **words, void *user, PLUGINSD_ACTION  *plugins_action)
+PARSER_RC pluginsd_begin(char **words, void *user_v, PLUGINSD_ACTION  *plugins_action)
 {
+    PARSER_USER_OBJECT *user = user_v;
     char *id = words[1];
     char *microseconds_txt = words[2];
+    char *remote_clock_txt = words[3];
 
     RRDSET *st = NULL;
     RRDHOST *host = ((PARSER_USER_OBJECT *)user)->host;
@@ -238,9 +248,12 @@ PARSER_RC pluginsd_begin(char **words, void *user, PLUGINSD_ACTION  *plugins_act
     if (microseconds_txt && *microseconds_txt)
         microseconds = str2ull(microseconds_txt);
 
+    usec_t remote_clock = 0;
+    if (remote_clock_txt && *remote_clock_txt)
+        remote_clock = str2ull(remote_clock_txt);
+
     if (plugins_action->begin_action) {
-        return plugins_action->begin_action(user, st, microseconds,
-                                            ((PARSER_USER_OBJECT *)user)->trust_durations);
+        return plugins_action->begin_action(user, st, microseconds, remote_clock);
     }
     return PARSER_RC_OK;
 disable:
@@ -669,7 +682,7 @@ PARSER_RC metalog_pluginsd_host(char **words, void *user, PLUGINSD_ACTION  *plug
 
 // New plugins.d parser
 
-inline size_t pluginsd_process(RRDHOST *host, struct plugind *cd, FILE *fp, int trust_durations)
+inline size_t pluginsd_process(RRDHOST *host, struct plugind *cd, FILE *fp, pluginsd_usecs usec_semantics)
 {
     int enabled = cd->enabled;
 
@@ -686,10 +699,10 @@ inline size_t pluginsd_process(RRDHOST *host, struct plugind *cd, FILE *fp, int 
     clearerr(fp);
 
     PARSER_USER_OBJECT *user = callocz(1, sizeof(*user));
-    ((PARSER_USER_OBJECT *) user)->enabled = cd->enabled;
-    ((PARSER_USER_OBJECT *) user)->host = host;
-    ((PARSER_USER_OBJECT *) user)->cd = cd;
-    ((PARSER_USER_OBJECT *) user)->trust_durations = trust_durations;
+    user->enabled = cd->enabled;
+    user->host = host;
+    user->cd = cd;
+    user->usec_semantics = usec_semantics;
 
     PARSER *parser = parser_init(host, user, fp, PARSER_INPUT_SPLIT);
 

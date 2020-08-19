@@ -11,7 +11,7 @@
 #define CONNECTED_TO_SIZE 100
 
 // #define STREAMING_PROTOCOL_CURRENT_VERSION (uint32_t)3       Gap-filling
-#define STREAMING_PROTOCOL_CURRENT_VERSION (uint32_t)2
+#define STREAMING_PROTOCOL_CURRENT_VERSION (uint32_t)3
 #define VERSION_GAP_FILLING 3
 
 #define STREAMING_PROTOCOL_VERSION "1.1"
@@ -45,7 +45,6 @@ struct sender_state {
     size_t max_size;
     usec_t reconnect_delay;
     char connected_to[CONNECTED_TO_SIZE + 1];   // We don't know which proxy we connect to, passed back from socket.c
-    size_t begin;
     size_t reconnects_counter;
     size_t sent_bytes;
     size_t sent_bytes_on_this_connection;
@@ -81,12 +80,15 @@ struct receiver_state {
     int update_every;
     uint32_t stream_version;
     time_t last_msg_t;
+    //time_t gap_start, gap_end;
+    uint32_t max_gap, gap_history;
     char read_buffer[512];
     int read_len;
 #ifdef ENABLE_HTTPS
     struct netdata_ssl ssl;
 #endif
-    unsigned int shutdown:1;    // Tell the thread to exit
+    unsigned int shutdown:1;            // Tell the thread to exit
+    unsigned int skip_one_value:1;      // Avoid processing values that have already been replicated
     unsigned int exited;      // Indicates that the thread has exited  (NOT A BITFIELD!)
 };
 
