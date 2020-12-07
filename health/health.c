@@ -361,6 +361,8 @@ static inline void health_alarm_execute(RRDHOST *host, ALARM_ENTRY *ae) {
     debug(D_HEALTH, "executing command '%s'", command_to_run);
     ae->flags |= HEALTH_ENTRY_FLAG_EXEC_IN_PROGRESS;
     ae->exec_spawn_serial = spawn_enq_cmd(command_to_run);
+    health_alarm_log_dispatch(HEALTH_ENTRY_FLAG_EXEC_RUN, "Queued command '%s' as id '%"PRIu64"'",
+        command_to_run, ae->exec_spawn_serial);
     enqueue_alarm_notify_in_progress(ae);
 
     return; //health_alarm_wait_for_execution
@@ -384,12 +386,14 @@ static inline void health_alarm_wait_for_execution(ALARM_ENTRY *ae) {
 }
 
 static inline void health_process_notifications(RRDHOST *host, ALARM_ENTRY *ae) {
-    debug(D_HEALTH, "Health alarm '%s.%s' = " CALCULATED_NUMBER_FORMAT_AUTO " - changed status from %s to %s",
-         ae->chart?ae->chart:"NOCHART", ae->name,
-         ae->new_value,
-         rrdcalc_status2string(ae->old_status),
-         rrdcalc_status2string(ae->new_status)
-    );
+    if(likely(ae->new_status >= RRDCALC_STATUS_CLEAR && ae->old_status >= RRDCALC_STATUS_CLEAR)) {
+        health_alarm_log_dispatch(HEALTH_ENTRY_FLAG_UPDATED, "Health alarm '%s.%s' = " CALCULATED_NUMBER_FORMAT_AUTO " - changed status from %s to %s",
+            ae->chart?ae->chart:"NOCHART", ae->name,
+            ae->new_value,
+            rrdcalc_status2string(ae->old_status),
+            rrdcalc_status2string(ae->new_status)
+        );
+    }
 
     health_alarm_execute(host, ae);
 }
