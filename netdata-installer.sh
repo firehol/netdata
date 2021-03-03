@@ -239,6 +239,7 @@ USAGE: ${PROGRAM} [options]
   --libs-are-really-here     If you get errors about missing zlib or libuuid but you know it is available, you might
                              have a broken pkg-config. Use this option to proceed without checking pkg-config.
   --disable-telemetry        Use this flag to opt-out from our anonymous telemetry progam. (DO_NOT_TRACK=1)
+  --use-wolfssl              Force use of WolfSSL instead the default (OpenSSL)
 
 Netdata will by default be compiled with gcc optimization -O2
 If you need to pass different CFLAGS, use something like this:
@@ -340,6 +341,10 @@ while [ -n "${1}" ]; do
       ;;
     "--build-judy")
       NETDATA_BUILD_JUDY=1
+      ;;
+    "--use-wolfssl")
+      NETDATA_USE_WOLFSSL=1
+      NETDATA_CONFIGURE_OPTIONS="${NETDATA_CONFIGURE_OPTIONS//--enable-wolfssl/} --enable-wolfssl"
       ;;
     "--install")
       NETDATA_PREFIX="${2}/netdata"
@@ -612,10 +617,14 @@ bundle_libmosquitto
 # -----------------------------------------------------------------------------
 
 build_libwebsockets() {
-  local env_cmd=''
+  local env_cmd='' wolfssl_opt=''
 
   if [ -z "${DONT_SCRUB_CFLAGS_EVEN_THOUGH_IT_MAY_BREAK_THINGS}" ]; then
     env_cmd="env CFLAGS=-fPIC CXXFLAGS= LDFLAGS="
+  fi
+
+  if [ "${NETDATA_USE_WOLFSSL}" = "1" ]; then
+    wolfssl_opt='-DLWS_WITH_WOLFSSL=1 -DLWS_WOLFSSL_LIBRARIES=/usr/lib/libwolfssl.a -DLWS_WOLFSSL_INCLUDE_DIRS=/usr/include/'
   fi
 
   pushd "${1}" > /dev/null || exit 1
@@ -644,11 +653,11 @@ EOF
     run ${env_cmd} cmake \
       -D OPENSSL_ROOT_DIR=/usr/local/opt/openssl \
       -D OPENSSL_LIBRARIES=/usr/local/opt/openssl/lib \
-      -D LWS_WITH_SOCKS5:bool=ON \
+      -D LWS_WITH_SOCKS5:bool=ON ${wolfssl_opt} \
       $CMAKE_FLAGS \
       .
   else
-    run ${env_cmd} cmake -D LWS_WITH_SOCKS5:bool=ON $CMAKE_FLAGS .
+    run ${env_cmd} cmake -D LWS_WITH_SOCKS5:bool=ON ${wolfssl_opt} $CMAKE_FLAGS .
   fi
   run ${env_cmd} make
   popd > /dev/null || exit 1

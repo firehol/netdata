@@ -100,6 +100,30 @@ openssl req -newkey rsa:2048 -nodes -sha512 -x509 -days 365 -keyout key.pem -out
 > openssl speed rsa2048 rsa4096
 > ```
 
+### Select TLS library
+
+Netdata can be compiled against either `OpenSSL` or `WolfSSL` libraries, but only `OpenSSL` gives support for all
+Netdata features. For more details, take a look on the table:
+
+| Netdata feature | OpenSSL |WolfSSL|
+|:---------:|:-----------:|:------------:|
+| HTTPS protocol | Available|Available|
+| Encrypted stream| Avaiable|Available|
+| memory mode = `dbengine`| Avaiable|Available|
+| HTTPS on exporter| When destination accepts|When destination accepts, but with a worse performance when compared with `OpenSSL`. <sup id="a1">[1](#f1)</sup>|
+| Netdata cloud| Available| `not Available` due problems with `libwebsockets`. <sup id="a2">[2](#f2)</sup> |
+
+<b id="f1">1</b> When testing with InnoDB, we observed error mesages like `"tls: oversized record received with length
+21536"`. [↩](#a1)
+
+<b id="f2">2</b> When `libwebsockets` is compiled against `WolfSSL` it says that the function
+`X509_VERIFY_PARAM_set1_host` is not present, but `WolfSSL` has the function `wolfSSL_X509_VERIFY_PARAM_set1_host` that
+is not used. [↩](#a2)
+
+#### Linking against WolfSSL
+
+If you compile Netdata against `WolfSSL` and you have [errors](https://github.com/netdata/netdata/pull/10227#issuecomment-729626178), it is possible that your library were not compiled with all available options. 
+
 ### Select TLS version
 
 Beginning with version 1.21, specify the TLS version and the ciphers that you want to use:

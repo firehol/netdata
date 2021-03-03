@@ -59,7 +59,7 @@ void netdata_cleanup_and_exit(int ret) {
     }
 
 #ifdef ENABLE_HTTPS
-    security_clean_openssl();
+    security_clean_ssl();
 #endif
     info("EXIT: all done - netdata is now exiting - bye bye...");
     exit(ret);
@@ -414,7 +414,12 @@ static void security_init(){
     tls_version    = config_get(CONFIG_SECTION_WEB, "tls version",  "1.3");
     tls_ciphers    = config_get(CONFIG_SECTION_WEB, "tls ciphers",  "none");
 
+#ifdef NETDATA_HTTPS_WITH_OPENSSL
     security_openssl_library();
+#endif
+#ifdef NETDATA_HTTPS_WITH_WOLFSSL
+    security_wolfssl_library();
+#endif
 }
 #endif
 

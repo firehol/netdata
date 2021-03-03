@@ -155,6 +155,12 @@ AC_ARG_ENABLE(
     [enable_https="detect"]
 )
 AC_ARG_ENABLE(
+    [wolfssl],
+    [AS_HELP_STRING([--enable-wolfssl], [enable SSL support with WolfSSL @<:@default disabled@:>@])],
+    ,
+    [enable_wolfssl="no"]
+)
+AC_ARG_ENABLE(
     [dbengine],
     [AS_HELP_STRING([--disable-dbengine], [disable netdata dbengine @<:@default autodetect@:>@])],
     ,
@@ -378,6 +384,18 @@ OPTIONAL_UUID_CFLAGS="${UUID_CFLAGS}"
 OPTIONAL_UUID_LIBS="${UUID_LIBS}"
 
 # -----------------------------------------------------------------------------
+# WolfSSL Cryptography and SSL/TLS Toolkit
+
+AC_CHECK_LIB(
+    [wolfssl],
+    [wolfSSL_Init],
+    [WOLFSSL_LIBS="-lwolfssl"]
+)
+
+test -z "${WOLFSSL_LIBS}" -a  "${enable_wolfssl}" = "yes" || \
+    AC_DEFINE([HAVE_CRYPTO], [1], [libwolfssl availability])
+
+# -----------------------------------------------------------------------------
 # OpenSSL Cryptography and SSL/TLS Toolkit
 
 AC_CHECK_LIB(
@@ -463,14 +481,14 @@ fi
 test "${enable_dbengine}" = "yes" -a -z "${JUDY_LIBS}" && \
     AC_MSG_ERROR([libJudy required but not found. Try installing 'libjudy-dev' or 'Judy-devel'.])
 
-test "${enable_https}" = "yes" -a -z "${SSL_LIBS}" && \
-    AC_MSG_ERROR([OpenSSL required for HTTPS but not found. Try installing 'libssl-dev' or 'openssl-devel'.])
+test "${enable_https}" = "yes" -a -z "${SSL_LIBS}" -a -z "${WOLFSSL_LIBS}" && \
+    AC_MSG_ERROR([OpenSSL or WolfSSL are required for HTTPS but not found. Try installing 'libssl-dev', 'openssl-devel', or 'libwolfssl-dev'.])
 
-test "${enable_dbengine}" = "yes" -a -z "${SSL_LIBS}" && \
-    AC_MSG_ERROR([OpenSSL required for DBENGINE but not found. Try installing 'libssl-dev' or 'openssl-devel'.])
+test "${enable_dbengine}" = "yes" -a -z "${SSL_LIBS}" -a -z "${WOLFSSL_LIBS}" && \
+    AC_MSG_ERROR([OpenSSL required for DBENGINE but not found. Try installing 'libssl-dev', 'openssl-devel', or  'libwolfssl-dev'.])
 
 AC_MSG_CHECKING([if netdata dbengine should be used])
-if test "${enable_dbengine}" != "no" -a "${UV_LIBS}" -a "${LZ4_LIBS}" -a "${JUDY_LIBS}" -a "${SSL_LIBS}"; then
+if test "${enable_dbengine}" != "no" -a "${UV_LIBS}" -a "${LZ4_LIBS}" -a "${JUDY_LIBS}" -a \( "${SSL_LIBS}" -o "${WOLF_LIBS}" \) ; then
     enable_dbengine="yes"
     AC_DEFINE([ENABLE_DBENGINE], [1], [netdata dbengine usability])
     OPTIONAL_LZ4_CFLAGS="${LZ4_CFLAGS}"
@@ -478,7 +496,11 @@ if test "${enable_dbengine}" != "no" -a "${UV_LIBS}" -a "${LZ4_LIBS}" -a "${JUDY
     OPTIONAL_JUDY_CFLAGS="${JUDY_CFLAGS}"
     OPTIONAL_JUDY_LIBS="${JUDY_LIBS}"
     OPTIONAL_SSL_CFLAGS="${SSL_CFLAGS}"
-    OPTIONAL_SSL_LIBS="${SSL_LIBS}"
+    if test "${WOLFSSL_LIBS}" -a "${enable_wolfssl}" = "yes" ; then
+        OPTIONAL_SSL_LIBS="${WOLFSSL_LIBS}"
+    else
+        OPTIONAL_SSL_LIBS="${SSL_LIBS}"
+    fi
 else
     enable_dbengine="no"
 fi
@@ -486,14 +508,24 @@ AC_MSG_RESULT([${enable_dbengine}])
 AM_CONDITIONAL([ENABLE_DBENGINE], [test "${enable_dbengine}" = "yes"])
 
 AC_MSG_CHECKING([if netdata https should be used])
-if test "${enable_https}" != "no" -a "${SSL_LIBS}"; then
+if test "${enable_https}" != "no" -a "${SSL_LIBS}" -a \( -z "${WOLFSSL_LIBS}" -o "${enable_wolfssl}" != "yes" \) ; then
     enable_https="yes"
     AC_DEFINE([ENABLE_HTTPS], [1], [netdata HTTPS usability])
+    AC_DEFINE([NETDATA_HTTPS_WITH_OPENSSL], [1], [netdata is compiled against OpenSSL])
     OPTIONAL_SSL_CFLAGS="${SSL_CFLAGS}"
     OPTIONAL_SSL_LIBS="${SSL_LIBS}"
 else
     enable_https="no"
 fi
+
+if test "${enable_wolfssl}" = "yes" -a "${WOLFSSL_LIBS}"; then
+    enable_https="yes"
+    AC_DEFINE([ENABLE_HTTPS], [1], [netdata HTTPS usability])
+    AC_DEFINE([NETDATA_HTTPS_WITH_WOLFSSL], [1], [netdata is compiled against WolfSSL])
+    OPTIONAL_SSL_CFLAGS="${SSL_CFLAGS}"
+    OPTIONAL_SSL_LIBS="${WOLFSSL_LIBS}"
+fi
+
 AC_MSG_RESULT([${enable_https}])
 AM_CONDITIONAL([ENABLE_HTTPS], [test "${enable_https}" = "yes"])
 
@@ -632,7 +664,7 @@ AM_CONDITIONAL([ENABLE_CAPABILITY], [test "${with_libcap}" = "yes"])
 
 AC_MSG_CHECKING([if cloud functionality should be enabled])
 AC_MSG_RESULT([${enable_cloud}])
-if test "$enable_cloud" != "no"; then
+if test "$enable_cloud" != "no" -a  \( "${enable_wolfssl}" != "yes" -o -z "${WOLFSSL_LIBS}" \); then
     # just to have all messages that can fail ACLK build in one place
     # so it is easier to see why it can't be built
     if test -n "${SSL_LIBS}"; then
