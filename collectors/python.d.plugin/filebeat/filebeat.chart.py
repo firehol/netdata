@@ -292,7 +292,6 @@ class Service(UrlService):
 
         for method in self.methods:
             sub_data = method.get_data(method.url)
-            assert sub_data is not None
             result.update(sub_data)
 
         self.debug(result)
