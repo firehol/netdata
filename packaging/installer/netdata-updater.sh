@@ -393,7 +393,7 @@ if [ -t 2 ]; then
 else
   # we are headless
   # create a temporary file for the log
-  logfile="$(mktemp "${logfile}"/netdata-updater.log.XXXXXX)"
+  logfile="$(mktemp "$(create_tmp_directory)"/netdata-updater.log.XXXXXX)"
   # open fd 3 and send it to logfile
   exec 3> "${logfile}"
 fi
