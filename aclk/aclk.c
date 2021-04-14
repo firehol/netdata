@@ -219,7 +219,7 @@ static void msg_callback(const char *topic, const void *msg, size_t msglen, int 
     close(logfd);
 #endif
 
-    debug(D_ACLK, "Got Message From Broker Topic \"%s\" QOS %d MSG: \"%s\"", topic, qos, cmsg);
+    debug(D_ACLK, "Got Message From Broker Topic \"%s\" QoS %d MSG: \"%s\"", topic, qos, cmsg);
 
     if (strcmp(aclk_get_topic(ACLK_TOPICID_COMMAND), topic))
         error("Received message on unexpected topic %s", topic);
