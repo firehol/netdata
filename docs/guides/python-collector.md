@@ -298,7 +298,7 @@ class Service(SimpleService):
     def get_data(self):
         #The data dict is basically all the values to be represented
         # The entries are in the format: { "dimension": value}
-        #And each "dimension" shoudl belong to a chart.
+        #And each "dimension" should belong to a chart.
         data = dict()
 
         self.populate_data()
@@ -356,7 +356,7 @@ chart:
 Next, time to add one more chart that visualizes the average, minimum, and maximum temperature values.
 
 Add a new entry in the `CHARTS` dictionary with the definition for the new chart. Since you want three values
-represented in this this chart, add three dimensions. You shoudl also use the same `FAMILY` value in the charts (`TEMP`)
+represented in this this chart, add three dimensions. You should also use the same `FAMILY` value in the charts (`TEMP`)
 so that those two charts are grouped together.
 
 ```python
