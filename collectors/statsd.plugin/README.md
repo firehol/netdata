@@ -91,7 +91,7 @@ When sending multiple packets over UDP, it is important not to exceed the networ
 
 Netdata will accept UDP packets up to 9000 bytes, but the underlying network will not exceed MTU. 
 
-> You can read more about the network maxium transmission unit(MTU) in this cloudflare [article](https://www.cloudflare.com/en-gb/learning/network-layer/what-is-mtu/).
+> You can read more about the network maximum transmission unit(MTU) in this cloudflare [article](https://www.cloudflare.com/en-gb/learning/network-layer/what-is-mtu/).
 
 ## Configuration
 
