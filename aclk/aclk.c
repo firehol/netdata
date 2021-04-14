@@ -355,7 +355,7 @@ static int wait_popcorning_finishes(mqtt_wss_client client, struct aclk_query_th
         if (elapsed >= ACLK_STABLE_TIMEOUT) {
             aclk_shared_state.agent_state = AGENT_STABLE;
             ACLK_SHARED_STATE_UNLOCK;
-            error("ACLK localhost popocorn finished");
+            error("ACLK localhost popcorn finished");
             if (unlikely(!query_threads->thread_list))
                 aclk_query_threads_start(query_threads, client);
             queue_connect_payloads();
@@ -363,7 +363,7 @@ static int wait_popcorning_finishes(mqtt_wss_client client, struct aclk_query_th
         }
         ACLK_SHARED_STATE_UNLOCK;
         need_wait = ACLK_STABLE_TIMEOUT - elapsed;
-        error("ACLK localhost popocorn wait %d seconds longer", need_wait);
+        error("ACLK localhost popcorn wait %d seconds longer", need_wait);
         sleep(need_wait);
     }
     return 1;
