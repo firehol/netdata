@@ -13,7 +13,7 @@
 #  --allow-duplicate-install  do not bail if we detect a duplicate install
 #  --reinstall                if an existing install would be updated, reinstall instead
 #  --claim-token              specify a token to use for claiming the newly installed instance
-#  --claim-url                specify a URL to use for claiming the newly installed isntance
+#  --claim-url                specify a URL to use for claiming the newly installed instance
 #  --claim-rooms              specify a list of rooms to claim the newly installed instance to
 #  --claim-proxy              specify a proxy to use while claiming the newly installed instance
 #
