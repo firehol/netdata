@@ -198,7 +198,7 @@ The eBPF collector enables and runs the following eBPF programs by default:
     When in `return` mode, it also creates charts showing errors when these operations are executed.
 -   `network viewer`: This eBPF program creates charts with information about `TCP` and `UDP` functions, including the
     bandwidth consumed by each.
--   `sync`: Montitor calls for syscalls sync(2), fsync(2), fdatasync(2), syncfs(2), msync(2), and sync_file_range(2).
+-   `sync`: Monitor calls for syscalls sync(2), fsync(2), fdatasync(2), syncfs(2), msync(2), and sync_file_range(2).
 
 ## Thread configuration
 
