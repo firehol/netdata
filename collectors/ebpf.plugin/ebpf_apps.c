@@ -922,7 +922,7 @@ void cleanup_variables_from_other_threads(uint32_t pid)
         socket_bandwidth_curr[pid] = NULL;
     }
 
-    // Clean cachestat strcture
+    // Clean cachestat structure
     if (cachestat_pid) {
         freez(cachestat_pid[pid]);
         cachestat_pid[pid] = NULL;

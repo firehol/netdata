@@ -96,7 +96,7 @@ static void ebpf_cachestat_cleanup(void *ptr)
  *
  * Update publish values before to write dimension.
  *
- * @param out  strcuture that will receive data.
+ * @param out  structure that will receive data.
  * @param mpa  calls for mark_page_accessed during the last second.
  * @param mbd  calls for mark_buffer_dirty during the last second.
  * @param apcl calls for add_to_page_cache_lru during the last second.
