@@ -24,7 +24,7 @@ prebuilt method for collecting your required metric data.
 
 In this tutorial, you'll learn how to leverage the [Python programming language](https://www.python.org/) to build a
 custom data collector for the Netdata Agent. Follow along with your own dataset, using the techniques and best practices
-covered here, or use the included examples for collecting and organizing eithre random or weather data.
+covered here, or use the included examples for collecting and organizing either random or weather data.
 
 ## What you need to get started
 
