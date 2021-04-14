@@ -48,7 +48,7 @@ The basic elements of a Netdata collector are:
 - `ORDER[]`: A list containing the charts to be displayed.
 - `CHARTS{}`: A dictionary containing the details for the charts to be displayed.
 - `data{}`: A dictionary containing the values to be displayed.
-- `get_data()`: The basic function of the plugin which will retrun to Netdata the correct values.
+- `get_data()`: The basic function of the plugin which will return to Netdata the correct values.
 
 Let's walk through these jobs and elements as independent elements first, then apply them to example Python code.
 
