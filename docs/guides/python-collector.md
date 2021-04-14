@@ -418,7 +418,7 @@ configuration in [YAML](https://www.tutorialspoint.com/yaml/yaml_basics.htm) for
 - Create a configuration file in the same directory as the `<plugin_name>.chart.py`. Name it `<plugin_name>.conf`.
 - Define a `job`, which is an instance of the collector. It is useful when you want to collect data from different
   sources with different attributes. For example, we could gather data from 2 different weather stations, which use
-  different temperature measures: Fahrenheit and Celcius.
+  different temperature measures: Fahrenheit and Celsius.
 - You can define many different jobs with the same name, but with different attributes. Netdata will try each job
   serially and will stop at the first job that returns data. If multiple jobs have the same name, only one of them can
   run. This enables you to define different "ways" to fetch data from a particular data source so that the collector has
@@ -433,7 +433,7 @@ weather_station_1:
     name: 'Greece'
     endpoint: 'https://endpoint_1.com'
     port: 67
-    type: 'celcius'
+    type: 'celsius'
 weather_station_2:
     name: 'Florida USA'
     endpoint: 'https://endpoint_2.com'
