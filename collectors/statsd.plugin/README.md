@@ -53,7 +53,7 @@ Netdata fully supports the StatsD protocol. All StatsD client libraries can be u
      - Timers use `|ms`
      - Histograms use `|h`
   
-     The only difference between the two, is the `units` of the charts, as timers report *miliseconds*.
+     The only difference between the two, is the `units` of the charts, as timers report *milliseconds*.
 
      [Sampling rate](#sampling-rates) is supported.
 
