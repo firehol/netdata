@@ -393,7 +393,7 @@ void aclk_graceful_disconnect(mqtt_wss_client client)
     mqtt_wss_disconnect(client, 1000);
 }
 
-/* Block till aclk_reconnect_delay is satisifed or netdata_exit is signalled
+/* Block till aclk_reconnect_delay is satisfied or netdata_exit is signalled
  * @return 0 - Go ahead and connect (delay expired)
  *         1 - netdata_exit
  */
