@@ -273,7 +273,7 @@ static void ebpf_socket_send_data(ebpf_module_t *em)
     netdata_publish_vfs_common_t common_udp;
     ebpf_update_global_publish(socket_publish_aggregated, &common_tcp, &common_udp, socket_aggregated_data);
 
-    // We read bytes from function arguments, but bandiwdth is given in bits,
+    // We read bytes from function arguments, but bandwidth is given in bits,
     // so we need to multiply by 8 to convert for the final value.
     write_count_chart(
       NETDATA_TCP_FUNCTION_COUNT, NETDATA_EBPF_FAMILY, socket_publish_aggregated, 3);
