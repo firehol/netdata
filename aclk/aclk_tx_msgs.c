@@ -276,7 +276,7 @@ void aclk_hello_msg(mqtt_wss_client client)
     aclk_shared_state.version_neg_wait_till = now_monotonic_usec() + USEC_PER_SEC * VERSION_NEG_TIMEOUT;
     ACLK_SHARED_STATE_UNLOCK;
 
-    //Hello message is versioned separatelly from the rest of the protocol
+    //Hello message is versioned separately from the rest of the protocol
     msg = create_hdr("hello", msg_id, 0, 0, ACLK_VERSION_NEG_VERSION);
 
     tmp = json_object_new_int(ACLK_VERSION_MIN);
