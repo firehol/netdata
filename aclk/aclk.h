@@ -84,7 +84,7 @@ extern struct aclk_shared_state {
 void aclk_alarm_reload(void);
 int aclk_update_alarm(RRDHOST *host, ALARM_ENTRY *ae);
 
-// TODO this is for bacward compatibility with ACLK legacy
+// TODO this is for backward compatibility with ACLK legacy
 #define ACLK_CMD_CHART 1
 #define ACLK_CMD_CHARTDEL 0
 /* Informs ACLK about created/deleted chart
