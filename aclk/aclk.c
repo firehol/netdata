@@ -461,7 +461,7 @@ static void set_proxy(struct mqtt_wss_proxy *out)
 
 /* Attempts to make a connection to MQTT broker over WSS
  * @param client instance of mqtt_wss_client
- * @return  0 - Successfull Connection,
+ * @return  0 - Successful Connection,
  *          <0 - Irrecoverable Error -> Kill ACLK,
  *          >0 - netdata_exit
  */
