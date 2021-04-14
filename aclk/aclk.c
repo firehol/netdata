@@ -401,7 +401,7 @@ void aclk_graceful_disconnect(mqtt_wss_client client)
 static int aclk_block_till_recon_allowed() {
     // Handle reconnect exponential backoff
     // fnc aclk_reconnect_delay comes from ACLK Legacy @amoss
-    // but has been modifed slightly (more randomness)
+    // but has been modified slightly (more randomness)
     unsigned long recon_delay = aclk_reconnect_delay(1);
     info("Wait before attempting to reconnect in %.3f seconds\n", recon_delay / (float)MSEC_PER_SEC);
     // we want to wake up from time to time to check netdata_exit
