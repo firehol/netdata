@@ -135,7 +135,7 @@ static int wait_till_agent_claimed(void)
  * agent claimed, cloud url set and private key available
  * 
  * @param aclk_hostname points to location where string pointer to hostname will be set
- * @param ackl_port port to int where port will be saved
+ * @param aclk_port port to int where port will be saved
  * 
  * @return If non 0 returned irrecoverable error happened and ACLK should be terminated
  */
@@ -220,7 +220,7 @@ static void msg_callback(const char *topic, const void *msg, size_t msglen, int 
     close(logfd);
 #endif
 
-    debug(D_ACLK, "Got Message From Broker Topic \"%s\" QOS %d MSG: \"%s\"", topic, qos, cmsg);
+    debug(D_ACLK, "Got Message From Broker Topic \"%s\" QoS %d MSG: \"%s\"", topic, qos, cmsg);
 
     if (strcmp(aclk_get_topic(ACLK_TOPICID_COMMAND), topic))
         error("Received message on unexpected topic %s", topic);
@@ -261,7 +261,7 @@ static int read_query_thread_count()
     return threads;
 }
 
-/* Keeps connection alive and handles all network comms.
+/* Keeps connection alive and handles all network communications.
  * Returns on error or when netdata is shutting down.
  * @param client instance of mqtt_wss_client
  * @returns  0 - Netdata Exits
@@ -329,7 +329,7 @@ static inline void mqtt_connected_actions(mqtt_wss_client client)
     aclk_hello_msg(client);
     ACLK_SHARED_STATE_LOCK;
     if (aclk_shared_state.agent_state != AGENT_INITIALIZING) {
-        error("Sending `connect` payload immediatelly as popcorning was finished already.");
+        error("Sending `connect` payload immediately as popcorning was finished already.");
         queue_connect_payloads();
     }
     ACLK_SHARED_STATE_UNLOCK;
@@ -356,7 +356,7 @@ static int wait_popcorning_finishes(mqtt_wss_client client, struct aclk_query_th
         if (elapsed >= ACLK_STABLE_TIMEOUT) {
             aclk_shared_state.agent_state = AGENT_STABLE;
             ACLK_SHARED_STATE_UNLOCK;
-            error("ACLK localhost popocorn finished");
+            error("ACLK localhost popcorn finished");
             if (unlikely(!query_threads->thread_list))
                 aclk_query_threads_start(query_threads, client);
             queue_connect_payloads();
@@ -364,7 +364,7 @@ static int wait_popcorning_finishes(mqtt_wss_client client, struct aclk_query_th
         }
         ACLK_SHARED_STATE_UNLOCK;
         need_wait = ACLK_STABLE_TIMEOUT - elapsed;
-        error("ACLK localhost popocorn wait %d seconds longer", need_wait);
+        error("ACLK localhost popcorn wait %d seconds longer", need_wait);
         sleep(need_wait);
     }
     return 1;
@@ -394,7 +394,7 @@ void aclk_graceful_disconnect(mqtt_wss_client client)
     mqtt_wss_disconnect(client, 1000);
 }
 
-/* Block till aclk_reconnect_delay is satisifed or netdata_exit is signalled
+/* Block till aclk_reconnect_delay is satisfied or netdata_exit is signalled
  * @return 0 - Go ahead and connect (delay expired)
  *         1 - netdata_exit
  */
@@ -402,7 +402,7 @@ void aclk_graceful_disconnect(mqtt_wss_client client)
 static int aclk_block_till_recon_allowed() {
     // Handle reconnect exponential backoff
     // fnc aclk_reconnect_delay comes from ACLK Legacy @amoss
-    // but has been modifed slightly (more randomness)
+    // but has been modified slightly (more randomness)
     unsigned long recon_delay = aclk_reconnect_delay(1);
     info("Wait before attempting to reconnect in %.3f seconds\n", recon_delay / (float)MSEC_PER_SEC);
     // we want to wake up from time to time to check netdata_exit
@@ -440,7 +440,7 @@ static int aclk_get_transport_idx(aclk_env_t *env) {
 
 /* Attempts to make a connection to MQTT broker over WSS
  * @param client instance of mqtt_wss_client
- * @return  0 - Successfull Connection,
+ * @return  0 - Successful Connection,
  *          <0 - Irrecoverable Error -> Kill ACLK,
  *          >0 - netdata_exit
  */

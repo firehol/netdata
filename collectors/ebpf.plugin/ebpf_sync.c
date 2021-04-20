@@ -95,7 +95,7 @@ static void read_global_table()
     int i;
     for (i = 0; local_syscalls[i].syscall; i++) {
         if (local_syscalls[i].enabled) {
-            int fd = local_syscalls[i].kernel_info.map_fd[NETDATA_SYNC_GLOBLAL_TABLE];
+            int fd = local_syscalls[i].kernel_info.map_fd[NETDATA_SYNC_GLOBAL_TABLE];
             if (!bpf_map_lookup_elem(fd, &idx, &stored)) {
                 sync_hash_values[i] = stored;
             }

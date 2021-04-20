@@ -102,7 +102,7 @@ it will use these values to attempt to claim the container, automatically adding
 Rooms. If a proxy is specified, it will be used for the claiming process and for connecting to Netdata Cloud.
 
 These variables can be specified using any mechanism supported by your container tooling for setting environment
-variables inside containers. For example, when creating a new Netdata continer using `docker run`, the following
+variables inside containers. For example, when creating a new Netdata container using `docker run`, the following
 modified version of the command can be used to set the variables:
 
 ```bash

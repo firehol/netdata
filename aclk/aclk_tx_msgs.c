@@ -141,7 +141,7 @@ static struct json_object *create_hdr(const char *type, const char *msg_id, time
 
 // TODO handle this somehow on older json-c
 //    tmp = json_object_new_uint64(ts_us);
-// probably jso->_to_json_strinf -> custom function
+// probably jso->_to_json_string -> custom function
 //          jso->o.c_uint64 -> map this with pointer to signed int
 // commit that implements json_object_new_uint64 is 3c3b592
 // between 0.14 and 0.15
@@ -276,7 +276,7 @@ void aclk_hello_msg(mqtt_wss_client client)
     aclk_shared_state.version_neg_wait_till = now_monotonic_usec() + USEC_PER_SEC * VERSION_NEG_TIMEOUT;
     ACLK_SHARED_STATE_UNLOCK;
 
-    //Hello message is versioned separatelly from the rest of the protocol
+    //Hello message is versioned separately from the rest of the protocol
     msg = create_hdr("hello", msg_id, 0, 0, ACLK_VERSION_NEG_VERSION);
 
     tmp = json_object_new_int(ACLK_VERSION_MIN);
