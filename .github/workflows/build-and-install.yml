@@ -6,19 +6,6 @@ on:
       - master
   pull_request:
 jobs:
-  static-build:
-    name: Build (x86_64)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Git clone repository
-        uses: actions/checkout@v2
-        with:
-          submodules: recursive
-      - run: |
-          git fetch --prune --unshallow --tags
-      - name: Build
-        run: |
-          .github/scripts/build-static-x86_64.sh
   source-build:
     name: Build & Install
     strategy:
