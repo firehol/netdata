@@ -473,34 +473,6 @@ void rrdhost_update(RRDHOST *host
 
     // update host tags
     rrdhost_init_tags(host, tags);
-
-    if (rrdhost_flag_check(host, RRDHOST_FLAG_ARCHIVED)) {
-        rrdhost_flag_clear(host, RRDHOST_FLAG_ARCHIVED);
-        if(host->health_enabled) {
-            int r;
-            char filename[FILENAME_MAX + 1];
-
-            if (host != localhost) {
-                r = mkdir(host->varlib_dir, 0775);
-                if (r != 0 && errno != EEXIST)
-                    error("Host '%s': cannot create directory '%s'", host->hostname, host->varlib_dir);
-            }
-            snprintfz(filename, FILENAME_MAX, "%s/health", host->varlib_dir);
-            r = mkdir(filename, 0775);
-            if(r != 0 && errno != EEXIST)
-                error("Host '%s': cannot create directory '%s'", host->hostname, filename);
-
-            rrdhost_wrlock(host);
-            health_readdir(host, health_user_config_dir(), health_stock_config_dir(), NULL);
-            rrdhost_unlock(host);
-
-            health_alarm_log_load(host);
-            health_alarm_log_open(host);
-        }
-        rrd_hosts_available++;
-        info("Host %s is not in archived mode anymore", host->hostname);
-    }
-
     return;
 }
 
@@ -527,7 +499,7 @@ RRDHOST *rrdhost_find_or_create(
 
     rrd_wrlock();
     RRDHOST *host = rrdhost_find_by_guid(guid, 0);
-    if (unlikely(host && RRD_MEMORY_MODE_DBENGINE != mode && rrdhost_flag_check(host, RRDHOST_FLAG_ARCHIVED))) {
+    if (unlikely(host && RRD_MEMORY_MODE_DBENGINE != mode)) {
         /* If a legacy memory mode instantiates all dbengine state must be discarded to avoid inconsistencies */
         error("Archived host '%s' has memory mode '%s', but the wanted one is '%s'. Discarding archived state.",
               host->hostname, rrd_memory_mode_name(host->rrd_memory_mode), rrd_memory_mode_name(mode));
@@ -593,7 +565,7 @@ inline int rrdhost_should_be_removed(RRDHOST *host, RRDHOST *protected_host, tim
     if(host != protected_host
        && host != localhost
        && rrdhost_flag_check(host, RRDHOST_FLAG_ORPHAN)
-       && host->receiver
+       && !host->receiver
        && host->senders_disconnected_time
        && host->senders_disconnected_time + rrdhost_free_orphan_time < now)
         return 1;
@@ -611,15 +583,12 @@ restart_after_removal:
         if(rrdhost_should_be_removed(host, protected_host, now)) {
             info("Host '%s' with machine guid '%s' is obsolete - cleaning up.", host->hostname, host->machine_guid);
 
-            if (rrdhost_flag_check(host, RRDHOST_FLAG_DELETE_ORPHAN_HOST)
-#ifdef ENABLE_DBENGINE
-                /* don't delete multi-host DB host files */
-                && !(host->rrd_memory_mode == RRD_MEMORY_MODE_DBENGINE && host->rrdeng_ctx == &multidb_ctx)
-#endif
-            )
-                rrdhost_delete_charts(host);
-            else
-                rrdhost_save_charts(host);
+            if (host->rrd_memory_mode != RRD_MEMORY_MODE_DBENGINE) {
+                if (rrdhost_flag_check(host, RRDHOST_FLAG_DELETE_ORPHAN_HOST))
+                    rrdhost_delete_charts(host);
+                else
+                    rrdhost_save_charts(host);
+            }
 
             rrdhost_free(host);
             goto restart_after_removal;
@@ -1371,65 +1340,15 @@ restart_after_removal:
                     && st->last_updated.tv_sec + rrdset_free_obsolete_time < now
                     && st->last_collected_time.tv_sec + rrdset_free_obsolete_time < now
         )) {
-#ifdef ENABLE_DBENGINE
-            if(st->rrd_memory_mode == RRD_MEMORY_MODE_DBENGINE) {
-                RRDDIM *rd, *last;
+            if(st->rrd_memory_mode != RRD_MEMORY_MODE_DBENGINE) {
+                rrdset_rdlock(st);
+                if (rrdhost_delete_obsolete_charts)
+                    rrdset_delete(st);
+                else
+                    rrdset_save(st);
 
-                rrdset_flag_set(st, RRDSET_FLAG_ARCHIVED);
-                while (st->variables)  rrdsetvar_free(st->variables);
-                while (st->alarms)     rrdsetcalc_unlink(st->alarms);
-                rrdset_wrlock(st);
-                for (rd = st->dimensions, last = NULL ; likely(rd) ; ) {
-                    if (rrddim_flag_check(rd, RRDDIM_FLAG_ARCHIVED)) {
-                        last = rd;
-                        rd = rd->next;
-                        continue;
-                    }
-
-                    rrddim_flag_set(rd, RRDDIM_FLAG_ARCHIVED);
-                    while (rd->variables)
-                        rrddimvar_free(rd->variables);
-
-                    if (rrddim_flag_check(rd, RRDDIM_FLAG_OBSOLETE)) {
-                        rrddim_flag_clear(rd, RRDDIM_FLAG_OBSOLETE);
-                        /* only a collector can mark a chart as obsolete, so we must remove the reference */
-                        uint8_t can_delete_metric = rd->state->collect_ops.finalize(rd);
-                        if (can_delete_metric) {
-                            /* This metric has no data and no references */
-                            delete_dimension_uuid(rd->state->metric_uuid);
-                            rrddim_free(st, rd);
-                            if (unlikely(!last)) {
-                                rd = st->dimensions;
-                            }
-                            else {
-                                rd = last->next;
-                            }
-                            continue;
-                        }
-                    }
-                    last = rd;
-                    rd = rd->next;
-                }
                 rrdset_unlock(st);
-
-                debug(D_RRD_CALLS, "RRDSET: Cleaning up remaining chart variables for host '%s', chart '%s'", host->hostname, st->id);
-                rrdvar_free_remaining_variables(host, &st->rrdvar_root_index);
-
-                rrdset_flag_clear(st, RRDSET_FLAG_OBSOLETE);
-                if (st->dimensions) {
-                    /* If the chart still has dimensions don't delete it from the metadata log */
-                    continue;
-                }
             }
-#endif
-            rrdset_rdlock(st);
-
-            if(rrdhost_delete_obsolete_charts)
-                rrdset_delete(st);
-            else
-                rrdset_save(st);
-
-            rrdset_unlock(st);
 
             rrdset_free(st);
             goto restart_after_removal;

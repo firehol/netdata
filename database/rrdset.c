@@ -187,11 +187,6 @@ int rrdset_set_name(RRDSET *st, const char *name) {
 }
 
 inline void rrdset_is_obsolete(RRDSET *st) {
-    if(unlikely(rrdset_flag_check(st, RRDSET_FLAG_ARCHIVED))) {
-        info("Cannot obsolete already archived chart %s", st->name);
-        return;
-    }
-
     if(unlikely(!(rrdset_flag_check(st, RRDSET_FLAG_OBSOLETE)))) {
         rrdset_flag_set(st, RRDSET_FLAG_OBSOLETE);
         rrdset_flag_clear(st, RRDSET_FLAG_UPSTREAM_EXPOSED);
@@ -268,7 +263,7 @@ void rrdset_reset(RRDSET *st) {
         rd->collections_counter = 0;
         // memset(rd->values, 0, rd->entries * sizeof(storage_number));
 #ifdef ENABLE_DBENGINE
-        if (RRD_MEMORY_MODE_DBENGINE == st->rrd_memory_mode && !rrddim_flag_check(rd, RRDDIM_FLAG_ARCHIVED)) {
+        if (RRD_MEMORY_MODE_DBENGINE == st->rrd_memory_mode) {
             rrdeng_store_metric_flush_current_page(rd);
         }
 #endif
@@ -541,17 +536,11 @@ RRDSET *rrdset_create_custom(
     char fullid[RRD_ID_LENGTH_MAX + 1];
     snprintfz(fullid, RRD_ID_LENGTH_MAX, "%s.%s", type, id);
 
-    int changed_from_archived_to_active = 0;
     RRDSET *st = rrdset_find_on_create(host, fullid);
     if (st) {
         int mark_rebuild = 0;
         rrdset_flag_set(st, RRDSET_FLAG_SYNC_CLOCK);
         rrdset_flag_clear(st, RRDSET_FLAG_UPSTREAM_EXPOSED);
-        if (rrdset_flag_check(st, RRDSET_FLAG_ARCHIVED)) {
-            rrdset_flag_clear(st, RRDSET_FLAG_ARCHIVED);
-            changed_from_archived_to_active = 1;
-            mark_rebuild |= META_CHART_ACTIVATED;
-        }
         char *old_plugin = NULL, *old_module = NULL, *old_title = NULL, *old_context = NULL,
              *old_title_v = NULL, *old_context_v = NULL;
         int rc;
@@ -665,25 +654,13 @@ RRDSET *rrdset_create_custom(
             if (unlikely(rc))
                 error_report("Failed to update chart metadata in the database");
         }
-        /* Fall-through during switch from archived to active so that the host lock is taken and health is linked */
-        if (!changed_from_archived_to_active)
-            return st;
+        return st;
     }
 
     rrdhost_wrlock(host);
 
     st = rrdset_find_on_create(host, fullid);
     if(st) {
-        if (changed_from_archived_to_active) {
-            rrdset_flag_clear(st, RRDSET_FLAG_ARCHIVED);
-            rrdsetvar_create(st, "last_collected_t",    RRDVAR_TYPE_TIME_T,     &st->last_collected_time.tv_sec, RRDVAR_OPTION_DEFAULT);
-            rrdsetvar_create(st, "collected_total_raw", RRDVAR_TYPE_TOTAL,      &st->last_collected_total,       RRDVAR_OPTION_DEFAULT);
-            rrdsetvar_create(st, "green",               RRDVAR_TYPE_CALCULATED, &st->green,                      RRDVAR_OPTION_DEFAULT);
-            rrdsetvar_create(st, "red",                 RRDVAR_TYPE_CALCULATED, &st->red,                        RRDVAR_OPTION_DEFAULT);
-            rrdsetvar_create(st, "update_every",        RRDVAR_TYPE_INT,        &st->update_every,               RRDVAR_OPTION_DEFAULT);
-            rrdsetcalc_link_matching(st);
-            rrdcalctemplate_link_matching(st);
-        }
         rrdhost_unlock(host);
         rrdset_flag_set(st, RRDSET_FLAG_SYNC_CLOCK);
         rrdset_flag_clear(st, RRDSET_FLAG_UPSTREAM_EXPOSED);
@@ -1143,9 +1120,6 @@ static inline size_t rrdset_done_interpolate(
         last_ut = next_store_ut;
 
         rrddim_foreach_read(rd, st) {
-            if (rrddim_flag_check(rd, RRDDIM_FLAG_ARCHIVED))
-                continue;
-
             calculated_number new_value;
 
             switch(rd->algorithm) {
@@ -1521,8 +1495,6 @@ after_first_database_work:
     int dimensions = 0;
     st->collected_total = 0;
     rrddim_foreach_read(rd, st) {
-        if (rrddim_flag_check(rd, RRDDIM_FLAG_ARCHIVED))
-            continue;
         dimensions++;
         if(likely(rd->updated))
             st->collected_total += rd->collected_value;
@@ -1534,9 +1506,6 @@ after_first_database_work:
     // based on the collected figures only
     // at this stage we do not interpolate anything
     rrddim_foreach_read(rd, st) {
-        if (rrddim_flag_check(rd, RRDDIM_FLAG_ARCHIVED))
-            continue;
-
         if(unlikely(!rd->updated)) {
             rd->calculated_value = 0;
             continue;
@@ -1782,8 +1751,6 @@ after_second_database_work:
     st->last_collected_total  = st->collected_total;
 
     rrddim_foreach_read(rd, st) {
-        if (rrddim_flag_check(rd, RRDDIM_FLAG_ARCHIVED))
-            continue;
         if(unlikely(!rd->updated))
             continue;
 
@@ -1868,26 +1835,6 @@ after_second_database_work:
                             error("Cannot delete dimension file '%s'", rd->cache_filename);
                     }
 
-#ifdef ENABLE_DBENGINE
-                    if (rd->rrd_memory_mode == RRD_MEMORY_MODE_DBENGINE) {
-                        rrddim_flag_set(rd, RRDDIM_FLAG_ARCHIVED);
-                        while(rd->variables)
-                            rrddimvar_free(rd->variables);
-
-                        rrddim_flag_clear(rd, RRDDIM_FLAG_OBSOLETE);
-                        /* only a collector can mark a chart as obsolete, so we must remove the reference */
-                        uint8_t can_delete_metric = rd->state->collect_ops.finalize(rd);
-                        if (can_delete_metric) {
-                            /* This metric has no data and no references */
-                            delete_dimension_uuid(rd->state->metric_uuid);
-                        } else {
-                            /* Do not delete this dimension */
-                            last = rd;
-                            rd = rd->next;
-                            continue;
-                        }
-                    }
-#endif
                     if(unlikely(!last)) {
                         rrddim_free(st, rd);
                         rd = st->dimensions;

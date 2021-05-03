@@ -71,7 +71,7 @@ void charts2json(RRDHOST *host, BUFFER *wb, int skip_volatile, int show_archived
     c = 0;
     rrdhost_rdlock(host);
     rrdset_foreach_read(st, host) {
-        if ((!show_archived && rrdset_is_available_for_viewers(st)) || (show_archived && rrdset_is_archived(st))) {
+        if (rrdset_is_available_for_viewers(st)) {
             if(c) buffer_strcat(wb, ",");
             buffer_strcat(wb, "\n\t\t\"");
             buffer_strcat(wb, st->id);
@@ -111,7 +111,7 @@ void charts2json(RRDHOST *host, BUFFER *wb, int skip_volatile, int show_archived
         size_t found = 0;
         RRDHOST *h;
         rrdhost_foreach_read(h) {
-            if(!rrdhost_should_be_removed(h, host, now) && !rrdhost_flag_check(h, RRDHOST_FLAG_ARCHIVED)) {
+            if(!rrdhost_should_be_removed(h, host, now)) {
                 buffer_sprintf(wb
                                , "%s\n\t\t{"
                                  "\n\t\t\t\"hostname\": \"%s\""

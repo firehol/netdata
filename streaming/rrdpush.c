@@ -635,8 +635,6 @@ int rrdpush_receiver_thread_spawn(struct web_client *w, char *url) {
 
     rrd_rdlock();
     RRDHOST *host = rrdhost_find_by_guid(machine_guid, 0);
-    if (unlikely(host && rrdhost_flag_check(host, RRDHOST_FLAG_ARCHIVED))) /* Ignore archived hosts. */
-        host = NULL;
     if (host) {
         rrdhost_wrlock(host);
         netdata_mutex_lock(&host->receiver_lock);
@@ -667,6 +665,10 @@ int rrdpush_receiver_thread_spawn(struct web_client *w, char *url) {
         host->receiver = rpt;
         netdata_mutex_unlock(&host->receiver_lock);
         rrdhost_unlock(host);
+
+        rrd_unlock();
+        rrd_wrlock();
+        rrdhost_cleanup_orphan_hosts_nolock(host);
     }
     rrd_unlock();
 
