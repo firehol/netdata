@@ -5892,7 +5892,7 @@ NETDATA.globalSelectionSync = {
     state: null,
     dontSyncBefore: 0,
     last_t: 0,
-    slaves: [],
+    children: [],
     timeoutId: undefined,
 
     globalReset: function () {
@@ -5900,7 +5900,7 @@ NETDATA.globalSelectionSync = {
         this.state = null;
         this.dontSyncBefore = 0;
         this.last_t = 0;
-        this.slaves = [];
+        this.children = [];
         this.timeoutId = undefined;
     },
 
@@ -5942,14 +5942,14 @@ NETDATA.globalSelectionSync = {
         this.state = state;
         this.last_t = 0;
 
-        // find all slaves
+        // find all children
         let targets = NETDATA.intersectionObserver.targets();
-        this.slaves = [];
+        this.children = [];
         let len = targets.length;
         while (len--) {
             let st = targets[len];
             if (this.state !== st && st.globalSelectionSyncIsEligible()) {
-                this.slaves.push(st);
+                this.children.push(st);
             }
         }
 
@@ -5963,15 +5963,15 @@ NETDATA.globalSelectionSync = {
                 console.log('globalSelectionSync.stop()');
             }
 
-            let len = this.slaves.length;
+            let len = this.children.length;
             while (len--) {
-                this.slaves[len].clearSelection();
+                this.children[len].clearSelection();
             }
 
             this.state.clearSelection();
 
             this.last_t = 0;
-            this.slaves = [];
+            this.children = [];
             this.state = null;
         }
     },
@@ -5992,18 +5992,18 @@ NETDATA.globalSelectionSync = {
         }
     },
 
-    __syncSlaves: function () {
+    __syncChildren: function () {
         // if (NETDATA.globalSelectionSync.enabled() === true) {
         if (NETDATA.globalSelectionSync.enabled()) {
             // if (NETDATA.options.debug.globalSelectionSync === true)
             if (NETDATA.options.debug.globalSelectionSync) {
-                console.log('globalSelectionSync.__syncSlaves()');
+                console.log('globalSelectionSync.__syncChildren()');
             }
 
             let t = NETDATA.globalSelectionSync.last_t;
-            let len = NETDATA.globalSelectionSync.slaves.length;
+            let len = NETDATA.globalSelectionSync.children.length;
             while (len--) {
-                NETDATA.globalSelectionSync.slaves[len].setSelection(t);
+                NETDATA.globalSelectionSync.children[len].setSelection(t);
             }
 
             this.timeoutId = undefined;
@@ -6036,7 +6036,7 @@ NETDATA.globalSelectionSync = {
                 NETDATA.timeout.clear(this.timeoutId);
             }
 
-            this.timeoutId = NETDATA.timeout.set(this.__syncSlaves, 0);
+            this.timeoutId = NETDATA.timeout.set(this.__syncChildren, 0);
         }
     }
 };
@@ -7105,9 +7105,9 @@ let chartState = function (element) {
     };
 
     // ----------------------------------------------------------------------------------------------------------------
-    // global selection sync for slaves
+    // global selection sync for children
 
-    // can the chart participate to the global selection sync as a slave?
+    // can the chart participate to the global selection sync as a child?
     this.globalSelectionSyncIsEligible = function () {
         return (
             this.enabled &&
