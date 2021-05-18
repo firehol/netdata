@@ -60,28 +60,36 @@ typedef long double collected_number;
 typedef uint32_t storage_number;
 #define STORAGE_NUMBER_FORMAT "%u"
 
-#define SN_EXISTS           (1 << 24) // the value exists
-#define SN_EXISTS_RESET     (1 << 25) // the value has been overflown
-#define SN_EXISTS_100       (1 << 26) // very large value (multiplier is 100 instead of 10)
+#define SN_ANOMALOUS        (1 << 24) // the dim of this value is anomalous
+#define SN_RESET            (1 << 25) // the value has been overflown
+#define SN_BASE_100         (1 << 26) // very large value (multiplier is 100 instead of 10)
+
+#define SN_DEFAULT_FLAGS    (0x0)
 
 // extract the flags
-#define get_storage_number_flags(value) ((((storage_number)(value)) & (1 << 24)) | (((storage_number)(value)) & (1 << 25)) | (((storage_number)(value)) & (1 << 26)))
-#define SN_EMPTY_SLOT 0x00000000
+#define get_storage_number_flags(value) (           \
+    (((storage_number)(value)) & SN_ANOMALOUS) |    \
+    (((storage_number)(value)) & SN_RESET) |        \
+    (((storage_number)(value)) & SN_BASE_100)       \
+)
+
+// Same encoding as 0 but with a non-zero exponent (ie. 001).
+#define SN_EMPTY_SLOT ((storage_number) (1 << 27))
 
 // checks
-#define does_storage_number_exist(value) ((get_storage_number_flags(value) != 0)?1:0)
-#define did_storage_number_reset(value)  ((get_storage_number_flags(value) == SN_EXISTS_RESET)?1:0)
+#define does_storage_number_exist(value) ((value) != SN_EMPTY_SLOT)
+#define did_storage_number_reset(value)  ((get_storage_number_flags(value) == SN_RESET)?1:0)
 
 storage_number pack_storage_number(calculated_number value, uint32_t flags);
 calculated_number unpack_storage_number(storage_number value);
 
 int print_calculated_number(char *str, calculated_number value);
 
-//                                          sign       div/mul    <--- multiplier / divider --->     10/100       RESET      EXISTS     VALUE
-#define STORAGE_NUMBER_POSITIVE_MAX_RAW (storage_number)( (0 << 31) | (1 << 30) | (1 << 29) | (1 << 28) | (1<<27) | (1 << 26) | (0 << 25) | (1 << 24) | 0x00ffffff )
-#define STORAGE_NUMBER_POSITIVE_MIN_RAW (storage_number)( (0 << 31) | (0 << 30) | (1 << 29) | (1 << 28) | (1<<27) | (0 << 26) | (0 << 25) | (1 << 24) | 0x00000001 )
-#define STORAGE_NUMBER_NEGATIVE_MAX_RAW (storage_number)( (1 << 31) | (0 << 30) | (1 << 29) | (1 << 28) | (1<<27) | (0 << 26) | (0 << 25) | (1 << 24) | 0x00000001 )
-#define STORAGE_NUMBER_NEGATIVE_MIN_RAW (storage_number)( (1 << 31) | (1 << 30) | (1 << 29) | (1 << 28) | (1<<27) | (1 << 26) | (0 << 25) | (1 << 24) | 0x00ffffff )
+//                                          sign       div/mul    <--- multiplier / divider --->     10/100       RESET      ANOMALOUS VALUE
+#define STORAGE_NUMBER_POSITIVE_MAX_RAW (storage_number)( (0 << 31) | (1 << 30) | (1 << 29) | (1 << 28) | (1<<27) | (1 << 26) | (0 << 25) | (0 << 24) | 0x00ffffff )
+#define STORAGE_NUMBER_POSITIVE_MIN_RAW (storage_number)( (0 << 31) | (0 << 30) | (1 << 29) | (1 << 28) | (1<<27) | (0 << 26) | (0 << 25) | (0 << 24) | 0x00000001 )
+#define STORAGE_NUMBER_NEGATIVE_MAX_RAW (storage_number)( (1 << 31) | (0 << 30) | (1 << 29) | (1 << 28) | (1<<27) | (0 << 26) | (0 << 25) | (0 << 24) | 0x00000001 )
+#define STORAGE_NUMBER_NEGATIVE_MIN_RAW (storage_number)( (1 << 31) | (1 << 30) | (1 << 29) | (1 << 28) | (1<<27) | (1 << 26) | (0 << 25) | (0 << 24) | 0x00ffffff )
 
 // accepted accuracy loss
 #define ACCURACY_LOSS_ACCEPTED_PERCENT 0.0001
