@@ -525,7 +525,7 @@ void global_statistics_charts(void) {
 
     rrd_rdlock();
     rrdhost_foreach_read(host) {
-        if (host->rrd_memory_mode == RRD_MEMORY_MODE_DBENGINE && !rrdhost_flag_check(host, RRDHOST_FLAG_ARCHIVED)) {
+        if (host->rrd_memory_mode == RRD_MEMORY_MODE_DBENGINE) {
             if (&multidb_ctx == host->rrdeng_ctx) {
                 if (counted_multihost_db)
                     continue; /* Only count multi-host DB once */

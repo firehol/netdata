@@ -451,7 +451,7 @@ void aclk_update_next_child_to_popcorn(void)
 
     rrd_rdlock();
     rrdhost_foreach_read(host) {
-        if (unlikely(host == localhost || rrdhost_flag_check(host, RRDHOST_FLAG_ARCHIVED)))
+        if (unlikely(host == localhost))
             continue;
 
         rrdhost_aclk_state_lock(host);
