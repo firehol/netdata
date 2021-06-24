@@ -1,24 +1,24 @@
 <!--
-title: "Install Netdata with Docker"
-date: 2020-04-23
+title: "Run Netdata with Docker"
+description: ""
 custom_edit_url: https://github.com/netdata/netdata/edit/master/packaging/docker/README.md
 -->
 
-# Install the Netdata Agent with Docker
+# Run Netdata with Docker
 
-Running the Netdata Agent in a container works best for an internal network or to quickly analyze a host. Docker helps
-you get set up quickly, and doesn't install anything permanent on the system, which makes uninstalling the Agent easy.
+Running Netdata in a container works best for an internal network or to quickly analyze a host. Docker helps you get set
+up quickly, and doesn't install anything permanent on the system, which makes uninstalling the Agent easy.
 
 See our full list of Docker images at [Docker Hub](https://hub.docker.com/r/netdata/netdata).
 
-Starting with v1.30, Netdata collects anonymous usage information by default and sends it to a self hosted PostHog instance within the Netdata infrastructure. Read
-about the information collected, and learn how to-opt, on our [anonymous statistics](/docs/anonymous-statistics.md)
-page.
+Starting with v1.30, Netdata collects anonymous usage information by default and sends it to a self hosted PostHog
+instance within the Netdata infrastructure. Read about the information collected, and learn how to-opt, on our
+[anonymous statistics](/docs/anonymous-statistics.md) page.
 
 The usage statistics are _vital_ for us, as we use them to discover bugs and prioritize new features. We thank you for
 _actively_ contributing to Netdata's future.
 
-## Limitations running the Agent in Docker
+## Limitations running Netdata in Docker
 
 For monitoring the whole host, running the Agent in a container can limit its capabilities. Some data, like the host OS
 performance or status, is not accessible or not as detailed in a container as when running the Agent directly on the
@@ -32,7 +32,7 @@ directive, not a COMMAND directive. Please adapt your execution scripts accordin
 ENTRYPOINT vs COMMAND in the [Docker
 documentation](https://docs.docker.com/engine/reference/builder/#understand-how-cmd-and-entrypoint-interact).
 
-## Create a new Netdata Agent container
+## Create a new Netdata container
 
 You can create a new Agent container using either `docker run` or Docker Compose. After using either method, you can
 visit the Agent dashboard `http://NODE:19999`.
@@ -94,14 +94,23 @@ volumes:
   netdatacache:
 ```
 
+### Claim a new or running Netdata container to Netdata Cloud
+
+If you want to monitor the node running this container using [Netdata Cloud](https://learn.netdata.cloud/docs/cloud),
+it's easiest to create the container and immediately [claim](/claim/README.md) it in a single step using [`docker run`
+or Docker Compose](/claim/README.md#new-containers-using-docker-run).
+
+If you already created the container using one of the methods above, see the
+[claim](/claim/README.md#running-containers-using-docker-exec) doc for how to use `docker exec`.
+
 ## Docker tags
 
 The official `netdata/netdata` Docker image provides the following named tags:
 
-* `stable`: The `stable` tag will always point to the most recently published stable build.
-* `edge`: The `edge` tag will always point ot the most recently published nightly build. In most cases, this is
+- `stable`: The `stable` tag will always point to the most recently published stable build.
+- `edge`: The `edge` tag will always point ot the most recently published nightly build. In most cases, this is
   updated daily at around 01:00 UTC.
-* `latest`: The `latest` tag will always point to the most recently published build, whether it’s a stable build
+- `latest`: The `latest` tag will always point to the most recently published build, whether it’s a stable build
   or a nightly build. This is what Docker will use by default if you do not specify a tag.
 
 Additionally, for each stable release, three tags are pushed, one with the full version of the release (for example,
