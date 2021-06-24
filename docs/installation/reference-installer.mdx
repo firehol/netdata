@@ -1,0 +1,253 @@
+---
+title: Installation reference
+description: 'Netdata offers many installation methods to support all your physical/virtual servers. Learn about all the ways to configure your Netdata experience or find a method that works best for you.'
+type: reference
+custom_edit_url: https://github.com/netdata/netdata/edit/master/docs/installation/reference-installer.mdx
+---
+
+import { Install, InstallBox } from '@site/src/components/Install'
+
+# Installation reference
+
+Netdata offers many installation methods to support all your physical/virtual servers.
+
+The **recommended** way to install Netdata on a Linux node (physical, virtual, container, IoT) is our [one-line
+installer script (`kickstart.sh`)](/docs/get-started.mdx#install-on-linux-with-one-line-installer-recommended), which
+automatically installs dependencies and builds Netdata from its source code. For those who don't want to install Netdata
+directly, we also recommend [running Netdata with Docker](/docs/get-started.mdx#run-netdata-with-docker).
+
+## Supported operating systems
+
+We run automated checks on every PR to ensure that Netdata installs and runs properly on the following Linux
+distributions:
+
+- Ubuntu `21.04`, `20.10`, `20.04`, `18.04`, `16.04`
+- Debian `10`, `9`
+- Alpine `edge`, `3.13`, `3.12`, `3.11`, `3.10`
+- Arch Linux `latest`
+- Fedora `34`, `33`, `32`
+- CentOS `8`, `7`
+- OpenSUSE `tumbleweed:latest`, `leap:15.2`
+- Clear Linux `latest`
+
+Netdata runs on other distributions and operating systems as well, but they aren't officially supported by our team.
+
+## Installation methods
+
+Click on any of the boxes to jump to the reference doc for that installation method.
+
+<Install>
+  <InstallBox
+    to="/docs/agent/packaging/installer/methods/kickstart"
+    os="General Linux with one-line installer (recommended)"
+    svg="linux" />
+  <InstallBox
+    to="/docs/agent/packaging/docker"
+    os="Run with Docker" 
+    svg="docker" />
+  <InstallBox
+    to="/docs/agent/packaging/installer/methods/kubernetes"
+    os="Deploy on Kubernetes" 
+    svg="kubernetes" />
+   <InstallBox
+    to="/docs/agent/packaging/installer/methods/macos"
+    os="Install on macOS" 
+    svg="macos" />
+  <InstallBox
+    to="/docs/agent/packaging/installer/methods/packages"
+    os="Linux with .deb/.rpm packages" 
+    svg="linux" />
+  <InstallBox
+    to="/docs/agent/packaging/installer/methods/kickstart-64"
+    os="Linux with static 64-bit binary" 
+    svg="linux" />
+  <InstallBox
+    to="/docs/agent/packaging/installer/methods/manual"
+    os="Linux from Git" 
+    svg="linux" />
+  <InstallBox
+    to="/docs/agent/packaging/installer/methods/source"
+    os="Linux from source"
+    svg="linux" />
+  <InstallBox
+    to="/docs/agent/packaging/installer/methods/offline" 
+    os="Linux for offline nodes"
+    svg="linux" />
+</Install>
+
+## `netdata-installer.sh`
+
+The following installation methods are based around
+[`netdata-installer.sh`](https://raw.githubusercontent.com/netdata/netdata/master/netdata-installer.sh), which handles
+the installation process itself:
+
+- [One-line installer (`kickstart.sh`)](/packaging/installer/methods/kickstart.md)
+- [Manual from Git](/packaging/installer/methods/manual.md)
+- [Build from source](/packaging/installer/methods/source.md)
+- [Offline nodes](/packaging/installer/methods/offline.md)
+
+`netdata-installer.sh` is, essentially, an automated version of the [manual from
+Git](/packaging/installer/methods/manual.md) method.
+
+Both the [pre-compiled static binary (`kickstart-static64.sh`)](/packaging/installer/methods/kickstart64.md) and
+[Docker](/packaging/installer/docker/README.md) installation methods use bundles that are _built_ using
+`netdata-installer.sh`, but none of the code is run on your system.
+
+### Parameters
+
+The [`netdata-install.sh` script](https://raw.githubusercontent.com/netdata/netdata/master/netdata-installer.sh) takes
+the following parameters to customize any installation of Netdata.
+
+| Parameter                                             | Description                                                                                                                                                                         |
+| :---------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--install PATH`                                      | Install Netdata in `PATH`. For example, `--install /opt` will put Netdata in `/opt/netdata`.                                                                                        |
+| `--reinstall`                                         | If an existing install is detected, reinstall instead of trying to update it. See the [reinstall](/docs/installation/reinstall.mdx) doc for details.                                |
+| `--dont-start-it`                                     | Prevent the installer from starting Netdata automatically.                                                                                                                          |
+| `--dont-wait`                                         | Run in non-interactive mode to skip prompting for permission to install any required packages. Useful for automated installation, such as with [Ansible](/docs/guides/ansible.md).  |
+| `--auto-update` or `-u`                               | Install `netdata-update`r in cron to update Netdata automatically once per day.                                                                                                     |
+| `--auto-update-type`                                  | Override the auto-update scheduling mechanism detection. Currently supported types are: `systemd`, `interval`, `crontab`.                                                           |
+| `--no-updates`                                        | Prevent automatic updates of any kind.                                                                                                                                              |
+| `--stable-channel`                                    | Automatically update only on the release of new major versions. See [nightly vs. stable releases](#nightly-vs-stable-releases).                                                     |
+| `--nightly-channel`                                   | Automatically update on every new nightly build. See [nightly vs. stable releases](#nightly-vs-stable-releases).                                                                    |
+| `--local-files`                                       | Used for [offline installations](offline.md). This option conflicts with the `--stable-channel` option. If you set this _and_ `--stable-channel`, Netdata will use the local files. |
+| `--disable-telemetry`                                 | Opt-out of [anonymous statistics](/docs/anonymous-statistics.md) we use to make Netdata better. Sets `DO_NOT_TRACK` to `1`.                                                         |
+| `--disable-go`                                        | Disable installation of go.d.plugin. Default: `enabled`.                                                                                                                            |
+| `--disable-ebpf`                                      | Disable eBPF Kernel plugin. Default: `enabled`.                                                                                                                                     |
+| `--disable-cloud`                                     | Disable all [Netdata Cloud](https://learn.netdata.cloud/docs/cloud) functionality.                                                                                                  |
+| `--require-cloud`                                     | Fail the install if it can't build Netdata Cloud support.                                                                                                                           |
+| `--aclk-ng`                                           | Forces build of [ACLK](/aclk/) Next Generation which is fallback by default.                                                                                                        |
+| `--disable-https`                                     | Explicitly disable TLS support.                                                                                                                                                     |
+| `--disable-dbengine`                                  | Explicitly disable DB engine support.                                                                                                                                               |
+| `--enable-plugin-freeipmi`                            | Enable the FreeIPMI plugin. Defaults to enabled when `libipmimonitoring` is available.                                                                                              |
+| `--disable-plugin-freeipmi`                           | Explicitly disable the FreeIPMI plugin.                                                                                                                                             |
+| `--enable-plugin-nfacct`                              | Enable nfacct plugin. Defaults to enabled when `libmnl` and `libnetfilter_acct` are available.                                                                                      |
+| `--disable-plugin-nfacct`                             | Explicitly disable the nfacct plugin.                                                                                                                                               |
+| `--enable-plugin-xenstat`                             | Enable the xenstat plugin. Defaults to enabled when `libxenstat` and `libyajl` are available.                                                                                       |
+| `--disable-plugin-xenstat`                            | Explicitly disable the xenstat plugin.                                                                                                                                              |
+| `--enable-backend-kinesis`                            | Enable the AWS Kinesis backend. Defaults to enabled when `libaws_cpp_sdk_kinesis` and libraries it depends on are available.                                                        |
+| `--disable-backend-kinesis`                           | Explicitly disable the AWS Kinesis backend                                                                                                                                          |
+| `--enable-backend-prometheus-remote-write`            | Enable the Prometheus remote write backend. Defaults to enabled when `libprotobuf` and `libsnappy` are available.                                                                   |
+| `--disable-backend-prometheus-remote-write`           | Explicitly disable the Prometheus remote write backend                                                                                                                              |
+| `--enable-backend-mongodb`                            | Enable the MongoDB backend. Defaults to enabled when `libmongoc` is available.                                                                                                      |
+| `--disable-backend-mongodb`                           | Explicitly disable the MongoDB backend                                                                                                                                              |
+| `--enable-lto`                                        | Enable Link-Time-Optimization. Default: `enabled`.                                                                                                                                  |
+| `--disable-lto`                                       | Explicitly disable Link-Time-Optimization.                                                                                                                                          |
+| `--disable-x86-sse`                                   | Disable SSE instructions. By default SSE optimizations are enabled.                                                                                                                 |
+| `--use-system-lws`                                    | Use a system copy of `libwebsockets` instead of bundling our own (default is to use the bundled copy).                                                                              |
+| `--zlib-is-really-here`<br />`--libs-are-really-here` | If you get errors about missing zlib or libuuid but you know it is available, you might have a broken `pkg-config`. Use this option to proceed without checking `pkg-config`.       |
+
+## Automatic updates
+
+By default, Netdata's installation scripts enable automatic updates for both nightly and stable release channels.
+
+If you would prefer to [update Netdata manually](/packaging/installer/UPDATE.md), you can disable automatic updates by
+using the `--no-updates` option when you install or update Netdata.
+
+```bash
+bash <(curl -Ss https://my-netdata.io/kickstart.sh) --no-updates
+```
+
+### Network usage of Netdata’s automatic updater
+
+The auto-update functionality set up by the installation scripts requires working internet access to function
+correctly. In particular, it currently requires access to GitHub (to check if a newer version of the updater script
+is available or not, as well as potentially fetching build-time dependencies that are bundled as part of the install),
+and Google Cloud Storage (to check for newer versions of Netdata and download the sources if there is a newer version).
+
+Note that the auto-update functionality will check for updates to itself independently of updates to Netdata,
+and will try to use the latest version of the updater script whenever possible. This is intended to reduce the
+amount of effort required by users to get updates working again in the event of a bug in the updater code.
+
+## Nightly vs. stable releases
+
+The Netdata team maintains two releases of the Netdata agent: **nightly** and **stable**. By default, Netdata's
+installation scripts will give you **automatic, nightly** updates, as that is our recommended configuration.
+
+**Nightly**: We create nightly builds every 24 hours. They contain fully-tested code that fixes bugs or security flaws,
+or introduces new features to Netdata. Every nightly release is a candidate for then becoming a stable release—when
+we're ready, we simply change the release tags on GitHub. That means nightly releases are stable and proven to function
+correctly in the vast majority of Netdata use cases. That's why nightly is the _best choice for most Netdata users_.
+
+**Stable**: We create stable releases whenever we believe the code has reached a major milestone. Most often, stable
+releases correlate with the introduction of new, significant features. Stable releases might be a better choice for
+those who run Netdata in _mission-critical production systems_, as updates will come more infrequently, and only after
+the community helps fix any bugs that might have been introduced in previous releases.
+
+**Pros of using nightly releases:**
+
+-   Get the latest features and bug fixes as soon as they're available
+-   Receive security-related fixes immediately
+-   Use stable, fully-tested code that's always improving
+-   Leverage the same Netdata experience our community is using
+
+**Pros of using stable releases:**
+
+-   Protect yourself from the rare instance when major bugs slip through our testing and negatively affect a Netdata
+    installation
+-   Retain more control over the Netdata version you use
+
+## Troubleshooting and known issues
+
+We are tracking a few issues related to installation and packaging.
+
+### Older distributions (Ubuntu 14.04, Debian 8, CentOS 6) and OpenSSL
+
+If you're running an older Linux distribution or one that has reached EOL, such as Ubuntu 14.04 LTS, Debian 8, or CentOS
+6, your Agent may not be able to securely connect to Netdata Cloud due to an outdated version of OpenSSL. These old
+versions of OpenSSL cannot perform [hostname validation](https://wiki.openssl.org/index.php/Hostname_validation), which
+helps securely encrypt SSL connections.
+
+We recommend you reinstall Netdata with a [static build](/packaging/installer/methods/kickstart-64.md), which uses an
+up-to-date version of OpenSSL with hostname validation enabled.
+
+If you choose to continue using the outdated version of OpenSSL, your node will still connect to Netdata Cloud, albeit
+with hostname verification disabled. Without verification, your Netdata Cloud connection could be vulnerable to
+man-in-the-middle attacks.
+
+### CentOS 6 and CentOS 8
+
+To install the Agent on certain CentOS and RHEL systems, you must enable non-default repositories, such as EPEL or
+PowerTools, to gather hard dependencies. See the [CentOS 6](/packaging/installer/methods/manual.md#centos-rehel-6-x) and
+[CentOS 8](/packaging/installer/methods/manual.md#centos-rehel-8-x) sections for more information.
+
+### Access to file is not permitted
+
+If you see an error similar to `Access to file is not permitted: /usr/share/netdata/web//index.html` when you try to
+visit the Agent dashboard at `http://NODE:19999`, you need to update Netdata's permissions to match those of your
+system.
+
+Run `ls -la /usr/share/netdata/web/index.html` to find the file's permissions. You may need to change this path based on
+the error you're seeing in your browser. In the below example, the file is owned by the user `netdata` and the group
+`netdata`.
+
+```bash
+ls -la /usr/share/netdata/web/index.html
+-rw-r--r--. 1 netdata netdata 89377 May  5 06:30 /usr/share/netdata/web/index.html
+```
+
+Open your `netdata.conf` file and find the `[web]` section, plus the `web files owner`/`web files group` settings. Edit
+the lines to match the output from `ls -la` above and uncomment them if necessary.
+
+```conf
+[web]
+    web files owner = netdata
+    web files group = netdata
+```
+
+Save the file, restart Netdata using `sudo systemctl restart netdata`, or the [appropriate
+method](/docs/configure/start-stop-restart.md) for your system, and try accessing the dashboard again.
+
+### Multiple versions of OpenSSL
+
+We've received reports from the community about issues with running the `kickstart.sh` script on systems that have both
+a distribution-installed version of OpenSSL and a manually-installed local version. The Agent's installer cannot handle
+both.
+
+We recommend you install Netdata with the [static binary](/packaging/installer/methods/kickstart-64.md) to avoid the
+issue altogether. Or, you can manually remove one version of OpenSSL to remove the conflict.
+
+### Clang compiler on Linux
+
+Our current build process has some issues when using certain configurations of the `clang` C compiler on Linux. See [the
+section on `nonrepresentable section on output`
+errors](/packaging/installer/methods/manual.md#nonrepresentable-section-on-output-errors) for a workaround.
