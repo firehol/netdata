@@ -47,6 +47,9 @@ struct mountinfo {
 
     dev_t st_dev;           // id of device as given by stat()
 
+    uv_work_t work;
+    int busy;
+
     struct mountinfo *next;
 };
 
@@ -55,6 +58,7 @@ extern struct mountinfo *mountinfo_find_by_filesystem_mount_source(struct mounti
 extern struct mountinfo *mountinfo_find_by_filesystem_super_option(struct mountinfo *root, const char *filesystem, const char *super_options);
 
 extern void mountinfo_free_all(struct mountinfo *mi);
+extern void mountinfo_free(struct mountinfo *mi);
 extern struct mountinfo *mountinfo_read(int do_statvfs);
 
 #endif /* NETDATA_PROC_SELF_MOUNTINFO_H */

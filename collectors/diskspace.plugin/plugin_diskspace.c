@@ -9,6 +9,8 @@
 #define CONFIG_SECTION_DISKSPACE "plugin:proc:diskspace"
 
 static struct mountinfo *disk_mountinfo_root = NULL;
+static uv_rwlock_t disk_mountinfo_lock;
+static struct mountinfo *disk_mountinfo_busy_root = NULL;
 static int check_for_new_mountpoints_every = 15;
 static int cleanup_mount_points = 1;
 
@@ -17,8 +19,40 @@ static inline void mountinfo_reload(int force) {
     time_t now = now_realtime_sec();
 
     if(force || now - last_loaded >= check_for_new_mountpoints_every) {
-        // mountinfo_free_all() can be called with NULL disk_mountinfo_root
-        mountinfo_free_all(disk_mountinfo_root);
+        uv_rwlock_wrlock(&disk_mountinfo_lock);
+
+        // free mountinfo structures, keep busy mountinfo structures in a separate list
+        struct mountinfo *mi = disk_mountinfo_root;
+        while(mi) {
+            struct mountinfo *curr_mi = mi;
+            mi = mi->next;
+            if (!curr_mi->busy) {
+                mountinfo_free(curr_mi);
+            } else {
+                curr_mi->next = disk_mountinfo_busy_root;
+                disk_mountinfo_busy_root = curr_mi;
+            }
+        }
+
+        // finally remove and free mountinfo structures if they aren't busy anymore
+        mi = disk_mountinfo_busy_root;
+        struct mountinfo *prev_mi = disk_mountinfo_busy_root;
+        while (mi) {
+            struct mountinfo *curr_mi = mi;
+            mi = mi->next;
+            if (curr_mi->busy) {
+                prev_mi = curr_mi;
+            } else {
+                if (curr_mi == disk_mountinfo_busy_root)
+                    disk_mountinfo_busy_root = mi;
+                else
+                    prev_mi->next = mi;
+
+                mountinfo_free(curr_mi);
+            }
+        }
+
+        uv_rwlock_wrunlock(&disk_mountinfo_lock);
 
         // re-read mountinfo in case something changed
         disk_mountinfo_root = mountinfo_read(0);
@@ -34,6 +68,7 @@ struct mount_point_metadata {
     int do_inodes;
     int shown_error;
     int updated;
+    int busy;
 
     size_t collected; // the number of times this has been collected
 
@@ -49,6 +84,7 @@ struct mount_point_metadata {
 };
 
 static DICTIONARY *dict_mountpoints = NULL;
+static uv_rwlock_t dict_mountpoints_lock;
 
 #define rrdset_obsolete_and_pointer_null(st) do { if(st) { rrdset_is_obsolete(st); (st) = NULL; } } while(st)
 
@@ -58,8 +94,13 @@ int mount_point_cleanup(void *entry, void *data) {
     struct mount_point_metadata *mp = (struct mount_point_metadata *)entry;
     if(!mp) return 0;
 
-    if(likely(mp->updated)) {
-        mp->updated = 0;
+
+    if (mp->busy) {
+        return 0;
+    }
+
+    if(likely(mp->updated > 0)) {
+        mp->updated--;
         return 0;
     }
 
@@ -91,6 +132,13 @@ static inline void do_disk_space_stats(struct mountinfo *mi, int update_every) {
     static SIMPLE_PATTERN *excluded_filesystems = NULL;
     int do_space, do_inodes;
 
+    if (!mi->busy) {
+    #ifdef NETDATA_INTERNAL_CHECKS
+        error("DISKSPACE: mointpoint %s is not marked busy", mi->mount_point);
+    #endif
+        mi->busy = 1;
+    }
+
     if(unlikely(!dict_mountpoints)) {
         SIMPLE_PREFIX_MODE mode = SIMPLE_PATTERN_EXACT;
 
@@ -114,8 +162,18 @@ static inline void do_disk_space_stats(struct mountinfo *mi, int update_every) {
         dict_mountpoints = dictionary_create(DICTIONARY_FLAG_SINGLE_THREADED);
     }
 
+    uv_rwlock_rdlock(&dict_mountpoints_lock);
     struct mount_point_metadata *m = dictionary_get(dict_mountpoints, mi->mount_point);
-    if(unlikely(!m)) {
+    if (likely(m)) {
+        if (m->busy) {
+            uv_rwlock_rdunlock(&dict_mountpoints_lock);
+            return;
+        }
+        m->busy = 1;
+    }
+    uv_rwlock_rdunlock(&dict_mountpoints_lock);
+
+    if (unlikely(!m)) {
         char var_name[4096 + 1];
         snprintfz(var_name, 4096, "plugin:proc:diskspace:%s", mi->mount_point);
 
@@ -168,6 +226,7 @@ static inline void do_disk_space_stats(struct mountinfo *mi, int update_every) {
                 .do_inodes = do_inodes,
                 .shown_error = 0,
                 .updated = 0,
+                .busy = 1,
 
                 .collected = 0,
 
@@ -181,17 +240,16 @@ static inline void do_disk_space_stats(struct mountinfo *mi, int update_every) {
                 .rd_inodes_used = NULL,
                 .rd_inodes_reserved = NULL
         };
-
         m = dictionary_set(dict_mountpoints, mi->mount_point, &mp, sizeof(struct mount_point_metadata));
     }
 
-    m->updated = 1;
+    m->updated = 2;
 
     if(unlikely(m->do_space == CONFIG_BOOLEAN_NO && m->do_inodes == CONFIG_BOOLEAN_NO))
-        return;
+        goto exit;
 
     if(unlikely(mi->flags & MOUNTINFO_READONLY && !m->collected && m->do_space != CONFIG_BOOLEAN_YES && m->do_inodes != CONFIG_BOOLEAN_YES))
-        return;
+        goto exit;
 
     struct statvfs buff_statvfs;
     if (statvfs(mi->mount_point, &buff_statvfs) < 0) {
@@ -204,7 +262,7 @@ static inline void do_disk_space_stats(struct mountinfo *mi, int update_every) {
             );
             m->shown_error = 1;
         }
-        return;
+        goto exit;
     }
     m->shown_error = 0;
 
@@ -335,7 +393,17 @@ static inline void do_disk_space_stats(struct mountinfo *mi, int update_every) {
 
     if(likely(rendered))
         m->collected++;
+
+exit:
+    m->busy = 0;
 }
+
+static struct loop_thread
+{
+    uv_thread_t thread;
+    uv_loop_t loop;
+    uv_async_t async;
+} loop_thread;
 
 static void diskspace_main_cleanup(void *ptr) {
     struct netdata_static_thread *static_thread = (struct netdata_static_thread *)ptr;
@@ -343,7 +411,64 @@ static void diskspace_main_cleanup(void *ptr) {
 
     info("cleaning up...");
 
+    /* stop event loop */
+    fatal_assert(0 == uv_async_send(&loop_thread.async));
+
+    int error = uv_thread_join(&loop_thread.thread);
+    if (error) {
+        error("uv_thread_join(): %s", uv_strerror(error));
+    }
+
     static_thread->enabled = NETDATA_MAIN_THREAD_EXITED;
+}
+
+void close_async(uv_async_t *handle)
+{
+    uv_close((uv_handle_t *)handle, NULL);
+}
+
+void run_event_loop(void *ptr)
+{
+    UNUSED(ptr);
+    int error;
+
+    error = uv_loop_init(&loop_thread.loop);
+    if (error) {
+        error("uv_loop_init(): %s", uv_strerror(error));
+        return;
+    }
+
+    error = uv_async_init(&loop_thread.loop, &loop_thread.async, close_async);
+    if (error) {
+        error("uv_async_init(): %s", uv_strerror(error));
+    }
+    
+    uv_run(&loop_thread.loop, UV_RUN_DEFAULT);
+
+    fatal_assert(0 == uv_loop_close(&loop_thread.loop));
+}
+
+struct work_data {
+    struct mountinfo *mi;
+    int update_every;
+};
+
+void disk_space_stats_work(uv_work_t* req)
+{
+    // TODO: syncronize the thread with the main loop
+    
+    struct work_data *d = req->data;
+
+    do_disk_space_stats(d->mi, d->update_every);
+}
+
+void disk_space_stats_done(uv_work_t* req, int status)
+{
+    UNUSED(status);
+    struct work_data *d = req->data;
+
+    d->mi->busy = 0;
+    free(d);
 }
 
 void *diskspace_main(void *ptr) {
@@ -362,6 +487,17 @@ void *diskspace_main(void *ptr) {
         check_for_new_mountpoints_every = update_every;
 
     struct rusage thread;
+
+    fatal_assert(0 == uv_rwlock_init(&disk_mountinfo_lock));
+    fatal_assert(0 == uv_rwlock_init(&dict_mountpoints_lock));
+
+
+    // TODO: create a thread pool for fast mountpoints
+    int error = uv_thread_create(&loop_thread.thread, run_event_loop, NULL);
+    if (error) {
+        error("uv_thread_create(): %s", uv_strerror(error));
+        return NULL;
+    }
 
     usec_t duration = 0;
     usec_t step = update_every * USEC_PER_SEC;
@@ -386,17 +522,48 @@ void *diskspace_main(void *ptr) {
         struct mountinfo *mi;
         for(mi = disk_mountinfo_root; mi; mi = mi->next) {
 
-            if(unlikely(mi->flags & (MOUNTINFO_IS_DUMMY | MOUNTINFO_IS_BIND)))
+            if(unlikely(mi->flags & (MOUNTINFO_IS_DUMMY | MOUNTINFO_IS_BIND) || mi->busy))
                 continue;
 
-            do_disk_space_stats(mi, update_every);
+            mi->busy = 1;
+
+            // TODO:
+            // if a mount point is fast - wait for an available thread - uv_sem_wait()
+            // if a mount point is slow
+            //   check for an available thread - uv_thread_trywait()
+            //   if no threads are available
+            //     create a new thread if possible - uv_sem_post(),uv_thread_create()
+            //     or add to the slow queue (increase the queue counter)
+            // pick a free thread - go throug the list and check for the free flag
+            
+            // prepare data to pass - assign a pointer to the mi data
+            struct work_data *d = mallocz(sizeof(struct work_data));
+            d->mi = mi;
+            d->update_every = update_every;
+            mi->work.data = d;
+            
+            // wake the thread - uv_cond_signal()
+            fatal_assert(0 == uv_queue_work(&loop_thread.loop, &mi->work, disk_space_stats_work, disk_space_stats_done));
+            // if the thread is not busy - repeat the signal
+
+            // :TODO
+            
             if(unlikely(netdata_exit)) break;
         }
 
+        // TODO:
+        // go through the slow queue
+        //   check for an available thread with small intervals 
+        //   dispatch jobs (decrease the queue counter)
+        //   end the loop if too few time left before the next heartbeat
+
         if(unlikely(netdata_exit)) break;
 
-        if(dict_mountpoints)
+        if(dict_mountpoints) {
+            uv_rwlock_wrlock(&dict_mountpoints_lock);
             dictionary_get_all(dict_mountpoints, mount_point_cleanup, NULL);
+            uv_rwlock_wrunlock(&dict_mountpoints_lock);
+        }
 
         if(vdo_cpu_netdata) {
             static RRDSET *stcpu_thread = NULL, *st_duration = NULL;
@@ -404,6 +571,10 @@ void *diskspace_main(void *ptr) {
 
             // ----------------------------------------------------------------
 
+            // TODO: more useful stats
+            // -time until all jobs are dispatched
+            // -total number of slow moutpoints
+            // -number of skipped mountpoints (the slow queue counter)
             getrusage(RUSAGE_THREAD, &thread);
 
             if(unlikely(!stcpu_thread)) {
