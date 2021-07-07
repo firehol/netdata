@@ -209,3 +209,6 @@ netdata.cbp
 
 # External dependencies
 externaldeps/
+
+# Special exceptions
+!packaging/repoconfig/Makefile
