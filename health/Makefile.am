@@ -91,6 +91,7 @@ dist_healthconfig_DATA = \
     health.d/vcsa.conf \
     health.d/vernemq.conf \
     health.d/vsphere.conf \
+    health.d/watchtower.conf \
     health.d/web_log.conf \
     health.d/whoisquery.conf \
     health.d/wmi.conf \
