@@ -224,6 +224,35 @@ void rrdeng_store_metric_next(RRDDIM *rd, usec_t point_in_time, storage_number n
     descr = handle->descr;
 
     if (descr) {
+
+        /*
+         * Decide if we try to store in the current page in descr->[start_time, end_time] and if so
+         * store the value directly without extending the page_length
+         */
+        if (unlikely(point_in_time < descr->start_time)) {
+            errno = 0;
+            error("Metric not in the current page; discarding");
+            return;
+        }
+
+        if (unlikely(point_in_time <= descr->end_time)) {
+            uint64_t metric_index;
+            unsigned entries;
+
+            if (likely(descr->start_time != descr->end_time)) {
+                entries = descr->page_length / sizeof(storage_number);
+
+                metric_index = ((uint64_t)(point_in_time - descr->start_time)) * (entries - 1) /
+                               (descr->end_time - descr->start_time);
+            } else
+                metric_index = 0;
+
+            page = descr->pg_cache_descr->page;
+            page[metric_index] = number;
+            debug(D_RRDENGINE, "Overwriting metric at index %" PRIu64, metric_index);
+            return;
+        }
+
         /* Make alignment decisions */
 
         if (descr->page_length == rd->rrdset->rrddim_page_alignment) {
