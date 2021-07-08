@@ -9,13 +9,17 @@ const char *program_name = "";
 uint64_t debug_flags = DEBUG;
 
 int access_log_syslog = 1;
+int health_log_syslog = 1;
 int error_log_syslog = 1;
 int output_log_syslog = 1;  // debug log
 
 int stdaccess_fd = -1;
 FILE *stdaccess = NULL;
+int healthlog_fd = -1;
+FILE *healthlog = NULL;
 
 const char *stdaccess_filename = NULL;
+const char *healthlog_filename = NULL;
 const char *stderr_filename = NULL;
 const char *stdout_filename = NULL;
 const char *facility_log = NULL;
@@ -486,7 +490,7 @@ static FILE *open_log_file(int fd, FILE *fp, const char *filename, int *enabled_
         filename = "/dev/null";
         devnull = 1;
 
-	syslog_init();
+    syslog_init();
         if(enabled_syslog) *enabled_syslog = 1;
     }
     else if(enabled_syslog) *enabled_syslog = 0;
@@ -563,7 +567,10 @@ void reopen_all_log_files() {
         open_log_file(STDERR_FILENO, stderr, stderr_filename, &error_log_syslog, 0, NULL);
 
     if(stdaccess_filename)
-         stdaccess = open_log_file(stdaccess_fd, stdaccess, stdaccess_filename, &access_log_syslog, 1, &stdaccess_fd);
+        stdaccess = open_log_file(stdaccess_fd, stdaccess, stdaccess_filename, &access_log_syslog, 1, &stdaccess_fd);
+
+    if(healthlog_filename)
+        healthlog = open_log_file(healthlog_fd, healthlog, healthlog_filename, &health_log_syslog, 1, &healthlog_fd);
 }
 
 void open_all_log_files() {
@@ -573,6 +580,7 @@ void open_all_log_files() {
     open_log_file(STDOUT_FILENO, stdout, stdout_filename, &output_log_syslog, 0, NULL);
     open_log_file(STDERR_FILENO, stderr, stderr_filename, &error_log_syslog, 0, NULL);
     stdaccess = open_log_file(stdaccess_fd, stdaccess, stdaccess_filename, &access_log_syslog, 1, &stdaccess_fd);
+    healthlog = open_log_file(healthlog_fd, healthlog, healthlog_filename, &health_log_syslog, 1, &healthlog_fd);
 }
 
 // ----------------------------------------------------------------------------
@@ -868,5 +876,31 @@ void log_access( const char *fmt, ... ) {
 
         if(web_server_is_multithreaded)
             netdata_mutex_unlock(&access_mutex);
+    }
+}
+
+void log_health( const char *fmt, ... ) {
+    va_list args;
+
+    if(health_log_syslog) {
+        va_start( args, fmt );
+        vsyslog(LOG_INFO,  fmt, args );
+        va_end( args );
+    }
+
+    if(healthlog) {
+        static netdata_mutex_t health_mutex = NETDATA_MUTEX_INITIALIZER;
+        netdata_mutex_lock(&health_mutex);
+
+        char date[LOG_DATE_LENGTH];
+        log_date(date, LOG_DATE_LENGTH);
+        fprintf(healthlog, "%s: ", date);
+
+        va_start( args, fmt );
+        vfprintf( healthlog, fmt, args );
+        va_end( args );
+        fputc('\n', healthlog);
+
+        netdata_mutex_unlock(&health_mutex);
     }
 }
